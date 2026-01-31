@@ -8,6 +8,7 @@ type State struct {
 	SelectedFile  string
 	SelectedIndex int
 	DiffMode      git.DiffMode
+	DiffStyle     git.DiffStyle
 	ShowAllFiles  bool // Show all files vs only changed files
 
 	// Data
@@ -57,6 +58,15 @@ func (s *State) ToggleAllFiles() {
 	s.ShowAllFiles = !s.ShowAllFiles
 	s.SelectedFile = ""
 	s.SelectedIndex = 0
+}
+
+// ToggleDiffStyle toggles between unified and side-by-side diff views
+func (s *State) ToggleDiffStyle() {
+	if s.DiffStyle == git.DiffStyleUnified {
+		s.DiffStyle = git.DiffStyleSideBySide
+	} else {
+		s.DiffStyle = git.DiffStyleUnified
+	}
 }
 
 // SetFiles updates the file list

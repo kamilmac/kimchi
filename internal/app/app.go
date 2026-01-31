@@ -178,6 +178,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.ToggleAllFiles()
 			return a, a.loadFiles()
 
+		case key.Matches(msg, keys.DefaultKeyMap.ToggleDiffStyle):
+			a.state.ToggleDiffStyle()
+			a.diffView.SetStyle(a.state.DiffStyle)
+			return a, nil
+
 		case key.Matches(msg, keys.DefaultKeyMap.Tab):
 			a.cycleFocus(false)
 			return a, nil
@@ -348,6 +353,9 @@ func (a *App) renderStatusBar() string {
 
 	// Mode
 	mode := fmt.Sprintf("[%s]", a.state.DiffMode.String())
+	if a.state.DiffStyle == git.DiffStyleSideBySide {
+		mode += " [split]"
+	}
 	if a.state.ShowAllFiles {
 		mode += " [all]"
 	}

@@ -49,7 +49,7 @@ A lightweight TUI that serves as your primary interface when working with AI:
 ### Future
 - [ ] FileExplorer - full project tree navigation with expand/collapse
 - [ ] Docs integration - view/navigate markdown specs alongside code changes
-- [ ] Side-by-side diff view
+- [x] Side-by-side diff view (`s` to toggle)
 - [ ] Hooks/events for integration with AI agents (Claude Code, Cursor, Aider, etc.)
 
 ## Architecture
@@ -172,12 +172,13 @@ Shows at-a-glance context:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ feature/blocks  [branch] [all]  4 files  +127 -43        │
+│ feature/blocks  [branch] [split] [all]  4 files  +127 -43│
 └──────────────────────────────────────────────────────────┘
-  │                │      │       │        │
-  │                │      │       │        └── Total diff stats
-  │                │      │       └── File count
-  │                │      └── All files mode indicator (when active)
+  │                │       │       │       │        │
+  │                │       │       │       │        └── Total diff stats
+  │                │       │       │       └── File count
+  │                │       │       └── All files mode indicator (when active)
+  │                │       └── Side-by-side diff indicator (when active)
   │                └── Current diff mode
   └── Current branch
 ```
@@ -253,6 +254,22 @@ Title shows scroll position (top/bot/percentage).
 
 Large diffs truncated at 10,000 lines with message.
 
+### Display Styles
+
+Toggle with `s` key:
+
+| Style | Description |
+|-------|-------------|
+| Unified | Traditional `git diff` output with +/- prefixes |
+| Side-by-side | Two-pane view with old on left, new on right |
+
+Side-by-side view:
+- Shows line numbers on both sides
+- Pairs deletions with additions when consecutive
+- Falls back to unified if terminal width < 60 columns
+- Status bar shows `[split]` indicator when active
+- When viewing file content (no diff), shows line numbers on left
+
 ## Keybindings
 
 | Key | Action |
@@ -275,6 +292,7 @@ Large diffs truncated at 10,000 lines with message.
 | `1` | Working diff mode |
 | `2` | Branch diff mode |
 | `a` | Toggle all files view |
+| `s` | Toggle side-by-side diff |
 
 ## CLI Arguments
 
@@ -404,6 +422,7 @@ type State struct {
     SelectedFile  string
     SelectedIndex int
     DiffMode      DiffMode      // Working or Branch
+    DiffStyle     DiffStyle     // Unified or SideBySide
     ShowAllFiles  bool          // Toggle for all files view
     Files         []FileStatus
     Diff          string

@@ -26,9 +26,10 @@ type KeyMap struct {
 	Help       key.Binding
 
 	// Mode switching
-	ModeWorking    key.Binding
-	ModeBranch     key.Binding
-	ToggleAllFiles key.Binding
+	ModeWorking     key.Binding
+	ModeBranch      key.Binding
+	ToggleAllFiles  key.Binding
+	ToggleDiffStyle key.Binding
 
 	// Future
 	ToggleTree key.Binding
@@ -116,6 +117,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("a"),
 		key.WithHelp("a", "toggle all files"),
 	),
+	ToggleDiffStyle: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "split diff"),
+	),
 	ToggleTree: key.NewBinding(
 		key.WithKeys("t"),
 		key.WithHelp("t", "toggle tree"),
@@ -139,5 +144,6 @@ func HelpBindings() []key.Binding {
 		DefaultKeyMap.ModeWorking,
 		DefaultKeyMap.ModeBranch,
 		DefaultKeyMap.ToggleAllFiles,
+		DefaultKeyMap.ToggleDiffStyle,
 	}
 }

@@ -19,6 +19,25 @@ func (m DiffMode) String() string {
 	}
 }
 
+// DiffStyle represents how to display the diff
+type DiffStyle int
+
+const (
+	DiffStyleUnified    DiffStyle = iota // Traditional unified diff
+	DiffStyleSideBySide                  // Side-by-side view
+)
+
+func (s DiffStyle) String() string {
+	switch s {
+	case DiffStyleUnified:
+		return "unified"
+	case DiffStyleSideBySide:
+		return "split"
+	default:
+		return "unknown"
+	}
+}
+
 // FileStatus represents a changed file and its status
 type FileStatus struct {
 	Path   string
