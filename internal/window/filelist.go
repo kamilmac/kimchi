@@ -321,9 +321,13 @@ func (f *FileList) View(width, height int) string {
 		}
 	}
 
-	// Pad remaining lines
-	for len(lines) < height-2 {
+	// Ensure exactly height-2 lines (pad or truncate)
+	targetLines := height - 2
+	for len(lines) < targetLines {
 		lines = append(lines, "")
+	}
+	if len(lines) > targetLines {
+		lines = lines[:targetLines]
 	}
 
 	content := strings.Join(lines, "\n")
