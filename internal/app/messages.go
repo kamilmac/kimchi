@@ -1,6 +1,9 @@
 package app
 
-import "github.com/kmacinski/blocks/internal/git"
+import (
+	"github.com/kmacinski/blocks/internal/git"
+	"github.com/kmacinski/blocks/internal/github"
+)
 
 // FileSelectedMsg is sent when a file is selected in the file list
 type FileSelectedMsg struct {
@@ -74,3 +77,9 @@ type CloseModalMsg struct{}
 
 // GitChangedMsg is sent when git repository changes are detected
 type GitChangedMsg struct{}
+
+// PRLoadedMsg is sent when PR info is loaded
+type PRLoadedMsg struct {
+	PR  *github.PRInfo
+	Err error
+}

@@ -1,6 +1,9 @@
 package app
 
-import "github.com/kmacinski/blocks/internal/git"
+import (
+	"github.com/kmacinski/blocks/internal/git"
+	"github.com/kmacinski/blocks/internal/github"
+)
 
 // State holds the shared application state
 type State struct {
@@ -23,6 +26,9 @@ type State struct {
 	// UI
 	FocusedWindow string
 	ActiveModal   string // empty if no modal
+
+	// PR data
+	PR *github.PRInfo // Current PR info (nil if no PR)
 
 	// Errors
 	Error string

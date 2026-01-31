@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kmacinski/blocks/internal/git"
+	"github.com/kmacinski/blocks/internal/github"
 	"github.com/kmacinski/blocks/internal/keys"
 	"github.com/kmacinski/blocks/internal/layout"
 	"github.com/kmacinski/blocks/internal/ui"
@@ -23,6 +24,7 @@ import (
 type App struct {
 	state  *State
 	git    git.Client
+	gh     *github.Client
 	layout *layout.Manager
 	styles ui.Styles
 
@@ -85,6 +87,7 @@ func New(gitClient git.Client) *App {
 	app := &App{
 		state:       state,
 		git:         gitClient,
+		gh:          github.NewClient(),
 		layout:      layout.NewManager(layout.DefaultResponsive),
 		styles:      styles,
 		fileList:    fileList,
@@ -134,6 +137,7 @@ func (a *App) Init() tea.Cmd {
 		a.loadBranchInfo(),
 		a.loadFiles(),
 		a.loadCommits(),
+		a.loadPR(),
 	)
 }
 
@@ -240,7 +244,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DiffLoadedMsg:
 		a.state.Diff = msg.Content
-		a.diffView.SetContent(msg.Content)
+		a.diffView.SetContent(msg.Content, a.state.SelectedFile)
 		return a, nil
 
 	case CommitsLoadedMsg:
@@ -265,6 +269,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case GitChangedMsg:
 		// File system changed, refresh data
 		return a, tea.Batch(a.loadBranchInfo(), a.loadFiles(), a.loadDiff(), a.loadCommits(), a.loadDiffStats())
+
+	case PRLoadedMsg:
+		if msg.Err != nil {
+			a.state.PR = nil
+		} else {
+			a.state.PR = msg.PR
+		}
+		// Update windows with new PR data
+		a.fileList.SetPR(a.state.PR)
+		a.diffView.SetPR(a.state.PR)
+		return a, nil
 	}
 
 	return a, nil
@@ -307,7 +322,6 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cycleFocus(reverse bool) {
-	// CommitList is always visible now
 	windowOrder := []string{"filelist", "diffview", "commitlist"}
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
@@ -519,4 +533,11 @@ func (a *App) openInEditor(path string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return RefreshMsg{}
 	})
+}
+
+func (a *App) loadPR() tea.Cmd {
+	return func() tea.Msg {
+		pr, err := a.gh.GetPRForBranch()
+		return PRLoadedMsg{PR: pr, Err: err}
+	}
 }

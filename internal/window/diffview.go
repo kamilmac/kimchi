@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kmacinski/blocks/internal/git"
+	"github.com/kmacinski/blocks/internal/github"
 	"github.com/kmacinski/blocks/internal/keys"
 	"github.com/kmacinski/blocks/internal/ui"
 )
@@ -18,6 +19,8 @@ type DiffView struct {
 	Base
 	viewport viewport.Model
 	content  string
+	filePath string
+	pr       *github.PRInfo
 	style    git.DiffStyle
 	ready    bool
 	width    int
@@ -33,8 +36,9 @@ func NewDiffView(styles ui.Styles) *DiffView {
 }
 
 // SetContent updates the diff content
-func (d *DiffView) SetContent(content string) {
+func (d *DiffView) SetContent(content string, filePath string) {
 	d.content = content
+	d.filePath = filePath
 	if d.ready {
 		styled := d.renderContent(content)
 		d.viewport.SetContent(styled)
@@ -49,6 +53,15 @@ func (d *DiffView) SetStyle(style git.DiffStyle) {
 	if d.ready {
 		styled := d.renderContent(d.content)
 		d.viewport.SetContent(styled)
+	}
+}
+
+// SetPR sets the PR info for inline comments
+func (d *DiffView) SetPR(pr *github.PRInfo) {
+	d.pr = pr
+	// Re-render if we have content
+	if d.ready && d.content != "" {
+		d.viewport.SetContent(d.renderContent(d.content))
 	}
 }
 
@@ -248,25 +261,60 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 		return ""
 	}
 
+	// Build a map of comments by line number
+	commentsByLine := make(map[int][]github.LineComment)
+	if d.pr != nil && d.filePath != "" {
+		for _, c := range d.pr.FileComments[d.filePath] {
+			commentsByLine[c.Line] = append(commentsByLine[c.Line], c)
+		}
+	}
+
 	var styled []string
 	lines := strings.Split(content, "\n")
+	var newLineNum int
 
 	for _, line := range lines {
 		var styledLine string
-		switch {
-		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-			styledLine = d.styles.DiffAdded.Render(line)
-		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-			styledLine = d.styles.DiffRemoved.Render(line)
-		case strings.HasPrefix(line, "@@"):
+
+		// Track line numbers from hunk headers
+		if strings.HasPrefix(line, "@@") {
+			_, newLineNum = parseHunkHeader(line)
+			newLineNum-- // Will be incremented below
 			styledLine = d.styles.DiffHeader.Render(line)
-		case strings.HasPrefix(line, "diff "), strings.HasPrefix(line, "index "),
-			strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"):
+		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			styledLine = d.styles.DiffAdded.Render(line)
+			newLineNum++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			styledLine = d.styles.DiffRemoved.Render(line)
+			// Don't increment newLineNum for removed lines
+		} else if strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index ") ||
+			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
 			styledLine = d.styles.Muted.Render(line)
-		default:
+		} else {
 			styledLine = d.styles.DiffContext.Render(line)
+			newLineNum++
 		}
+
 		styled = append(styled, styledLine)
+
+		// Add comments for this line (only if we're tracking lines properly)
+		if newLineNum > 0 {
+			if comments, ok := commentsByLine[newLineNum]; ok {
+				for _, c := range comments {
+					// Format comment body - replace newlines, truncate
+					body := strings.ReplaceAll(c.Body, "\n", " ")
+					maxLen := 60
+					if d.viewport.Width > 20 {
+						maxLen = d.viewport.Width - len(c.Author) - 12
+					}
+					if len(body) > maxLen {
+						body = body[:maxLen-3] + "..."
+					}
+					commentLine := fmt.Sprintf("   >> %s: %s", c.Author, body)
+					styled = append(styled, d.styles.DiffHeader.Render(commentLine))
+				}
+			}
+		}
 	}
 
 	return strings.Join(styled, "\n")

@@ -51,6 +51,7 @@ A lightweight TUI that serves as your primary interface when working with AI:
 - [x] Docs mode - filter to markdown files only (`d` key)
 - [ ] Markdown rendering - render markdown with formatting
 - [x] Side-by-side diff view (`s` to toggle)
+- [x] PR comments - inline comments in diff view, "C" indicator on files with comments
 - [ ] Hooks/events for integration with AI agents (Claude Code, Cursor, Aider, etc.)
 
 ## Architecture
@@ -72,7 +73,7 @@ Windows implement a common interface. Layout doesn't care what type they are.
 |--------|-------------|
 | `FileList` | Tree view of changed files with status indicators |
 | `DiffView` | Diff preview for selected file (or file content for unchanged files) |
-| `CommitList` | List of commits on current branch (always visible) |
+| `CommitList` | List of commits on current branch |
 | `Help` | Keybinding reference (modal) |
 
 Each window:

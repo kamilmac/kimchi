@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kmacinski/blocks/internal/git"
+	"github.com/kmacinski/blocks/internal/github"
 	"github.com/kmacinski/blocks/internal/keys"
 	"github.com/kmacinski/blocks/internal/ui"
 )
@@ -38,6 +39,7 @@ type FileList struct {
 	Base
 	files       []git.FileStatus
 	flatEntries []flatEntry // flattened tree for display
+	pr          *github.PRInfo
 	cursor      int
 	offset      int // for scrolling
 	height      int
@@ -166,6 +168,11 @@ func (f *FileList) skipToFile(direction int) {
 // SetOnSelect sets the callback for when a file is selected
 func (f *FileList) SetOnSelect(fn func(index int, path string) tea.Cmd) {
 	f.onSelect = fn
+}
+
+// SetPR sets the PR info for comment indicators
+func (f *FileList) SetPR(pr *github.PRInfo) {
+	f.pr = pr
 }
 
 // SelectedIndex returns the index of the selected file in the original files slice
@@ -361,6 +368,12 @@ func (f *FileList) renderTreeLine(entry flatEntry, selected bool, maxWidth int) 
 		statusStr = " " + statusStyle.Render(entry.status.String())
 	}
 
+	// Comment indicator
+	var commentStr string
+	if !entry.isDir && f.pr != nil && len(f.pr.FileComments[entry.path]) > 0 {
+		commentStr = " " + f.styles.DiffHeader.Render("C")
+	}
+
 	// Calculate available width for name
 	indentLen := len(indent)
 	prefixLen := 2 // "▼ " or "  "
@@ -368,9 +381,13 @@ func (f *FileList) renderTreeLine(entry flatEntry, selected bool, maxWidth int) 
 	if !entry.isDir && entry.status != git.StatusUnchanged {
 		statusLen = 3 // " M" or similar
 	}
+	commentLen := 0
+	if commentStr != "" {
+		commentLen = 2 // " C"
+	}
 	cursorLen := 2 // "> " or "  "
 
-	availableWidth := maxWidth - indentLen - prefixLen - statusLen - cursorLen
+	availableWidth := maxWidth - indentLen - prefixLen - statusLen - commentLen - cursorLen
 	if availableWidth < 1 {
 		availableWidth = 1
 	}
@@ -394,5 +411,5 @@ func (f *FileList) renderTreeLine(entry flatEntry, selected bool, maxWidth int) 
 		cursor = ">"
 	}
 
-	return fmt.Sprintf("%s%s%s%s%s", cursor, indent, prefix, nameStyle.Render(name), statusStr)
+	return fmt.Sprintf("%s%s%s%s%s%s", cursor, indent, prefix, nameStyle.Render(name), statusStr, commentStr)
 }
