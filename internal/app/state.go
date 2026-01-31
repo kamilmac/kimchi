@@ -29,7 +29,7 @@ type State struct {
 // NewState creates a new state with defaults
 func NewState() *State {
 	return &State{
-		DiffMode:      git.DiffModeWorking,
+		DiffMode:      git.DiffModeBranch,
 		FocusedWindow: "filelist",
 	}
 }
