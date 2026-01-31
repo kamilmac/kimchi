@@ -71,3 +71,6 @@ type WindowResizeMsg struct {
 
 // CloseModalMsg is sent when a modal should be closed
 type CloseModalMsg struct{}
+
+// GitChangedMsg is sent when git repository changes are detected
+type GitChangedMsg struct{}

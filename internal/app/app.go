@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
@@ -14,6 +15,7 @@ import (
 	"github.com/kmacinski/blocks/internal/keys"
 	"github.com/kmacinski/blocks/internal/layout"
 	"github.com/kmacinski/blocks/internal/ui"
+	"github.com/kmacinski/blocks/internal/watcher"
 	"github.com/kmacinski/blocks/internal/window"
 )
 
@@ -40,6 +42,10 @@ type App struct {
 
 	// Status message
 	statusMessage string
+
+	// File watcher
+	watcher *watcher.GitWatcher
+	program *tea.Program
 }
 
 // New creates a new application
@@ -66,12 +72,14 @@ func New(gitClient git.Client) *App {
 
 	// Default assignments for different layouts
 	assignments := map[string]string{
-		"left":        "filelist",
-		"right":       "diffview",
+		// ThreeSlot layout
 		"left-top":    "filelist",
 		"left-bottom": "commitlist",
-		"top":         "filelist",
-		"bottom":      "diffview",
+		"right":       "diffview",
+		// StackedThree layout
+		"top":    "filelist",
+		"middle": "diffview",
+		"bottom": "commitlist",
 	}
 
 	app := &App{
@@ -95,6 +103,29 @@ func New(gitClient git.Client) *App {
 	})
 
 	return app
+}
+
+// SetProgram sets the tea.Program reference for sending messages from watcher
+func (a *App) SetProgram(p *tea.Program) {
+	a.program = p
+
+	// Start file watcher with 500ms debounce
+	w, err := watcher.New(500*time.Millisecond, func() {
+		if a.program != nil {
+			a.program.Send(GitChangedMsg{})
+		}
+	})
+	if err == nil {
+		a.watcher = w
+		a.watcher.Start()
+	}
+}
+
+// Cleanup stops the watcher
+func (a *App) Cleanup() {
+	if a.watcher != nil {
+		a.watcher.Stop()
+	}
 }
 
 // Init initializes the application
@@ -214,19 +245,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ErrorMsg:
 		a.state.Error = msg.Err.Error()
 		return a, nil
+
+	case GitChangedMsg:
+		// File system changed, refresh data
+		return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadCommits(), a.loadDiffStats())
 	}
 
 	return a, nil
 }
 
 func (a *App) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch a.state.ActiveModal {
-	case "help":
-		if key.Matches(msg, keys.DefaultKeyMap.Help) || key.Matches(msg, keys.DefaultKeyMap.Escape) {
-			a.state.CloseModal()
-			return a, nil
-		}
+	// Always allow quit
+	if key.Matches(msg, keys.DefaultKeyMap.Quit) {
+		return a, tea.Quit
 	}
+
+	// Close modal on ? or Escape
+	if key.Matches(msg, keys.DefaultKeyMap.Help) || key.Matches(msg, keys.DefaultKeyMap.Escape) {
+		a.state.CloseModal()
+		return a, nil
+	}
+
 	return a, nil
 }
 
@@ -252,14 +291,8 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cycleFocus(reverse bool) {
+	// CommitList is always visible now
 	windowOrder := []string{"filelist", "diffview", "commitlist"}
-
-	// Only include commitlist if we have 3-slot layout
-	currentLayout := a.layout.CurrentLayout()
-	if currentLayout.Name != "three-slot" {
-		windowOrder = []string{"filelist", "diffview"}
-	}
-
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
 }
@@ -353,47 +386,21 @@ func (a *App) renderStatusBar() string {
 }
 
 func (a *App) renderWithModal(background string, modal window.Window) string {
-	// Calculate modal size (60% width, 50% height)
-	modalWidth := a.width * 60 / 100
-	modalHeight := a.height * 50 / 100
+	// Calculate modal size - let content determine height
+	modalWidth := min(50, a.width-4)
+	modalHeight := min(26, a.height-4)
 
 	// Render modal content
 	modalContent := modal.View(modalWidth, modalHeight)
 
-	// Center the modal
-	modalX := (a.width - modalWidth) / 2
-	modalY := (a.height - modalHeight) / 2
-
-	// Create overlay
-	lines := strings.Split(background, "\n")
-	modalLines := strings.Split(modalContent, "\n")
-
-	for i, mLine := range modalLines {
-		lineIdx := modalY + i
-		if lineIdx >= 0 && lineIdx < len(lines) {
-			line := lines[lineIdx]
-			// Insert modal line at position
-			before := ""
-			if modalX > 0 && len(line) > 0 {
-				before = truncateString(line, modalX)
-			}
-			after := ""
-			afterStart := modalX + lipgloss.Width(mLine)
-			if afterStart < len(line) {
-				after = line[min(afterStart, len(line)):]
-			}
-			lines[lineIdx] = before + mLine + after
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen]
+	// Center modal on screen
+	return lipgloss.Place(
+		a.width,
+		a.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		modalContent,
+	)
 }
 
 func (a *App) renderError(title, hint string) string {

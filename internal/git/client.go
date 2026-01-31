@@ -85,16 +85,17 @@ func (c *GitClient) Status(mode DiffMode) ([]FileStatus, error) {
 		files = parseStatus(string(out))
 
 	case DiffModeBranch:
-		// Get changes vs base branch
+		// Get ALL changes vs base branch (committed + uncommitted)
 		base, err := c.BaseBranch()
 		if err != nil || base == "" {
 			return nil, err
 		}
-		cmd := exec.Command("git", "diff", "--name-status", base+"...HEAD")
+		// Using two-dot diff shows working tree vs base (includes uncommitted)
+		cmd := exec.Command("git", "diff", "--name-status", base)
 		out, err := cmd.Output()
 		if err != nil {
 			// Fallback: maybe we're on the base branch itself
-			cmd = exec.Command("git", "diff", "--name-status", "origin/"+base+"..HEAD")
+			cmd = exec.Command("git", "diff", "--name-status", "origin/"+base)
 			out, err = cmd.Output()
 			if err != nil {
 				return nil, err
@@ -182,7 +183,8 @@ func (c *GitClient) Diff(path string, mode DiffMode) (string, error) {
 		if err != nil || base == "" {
 			return "", err
 		}
-		args = []string{"diff", base + "...HEAD"}
+		// Using base (not base...HEAD) includes uncommitted changes
+		args = []string{"diff", base}
 		if path != "" {
 			args = append(args, "--", path)
 		}
@@ -275,7 +277,8 @@ func (c *GitClient) DiffStats(mode DiffMode) (added int, removed int, err error)
 		if err != nil || base == "" {
 			return 0, 0, err
 		}
-		args = []string{"diff", "--shortstat", base + "...HEAD"}
+		// Using base (not base...HEAD) includes uncommitted changes
+		args = []string{"diff", "--shortstat", base}
 	}
 
 	cmd := exec.Command("git", args...)

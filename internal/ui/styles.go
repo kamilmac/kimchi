@@ -100,6 +100,7 @@ func NewStyles(c Colors) Styles {
 		Modal: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(c.BorderFocused).
+			Background(lipgloss.Color("#1e1e2e")).
 			Padding(1, 2),
 		ModalTitle: lipgloss.NewStyle().
 			Bold(true).

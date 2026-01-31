@@ -69,6 +69,10 @@ func main() {
 		tea.WithMouseCellMotion(),
 	)
 
+	// Set program reference for file watcher
+	application.SetProgram(p)
+	defer application.Cleanup()
+
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

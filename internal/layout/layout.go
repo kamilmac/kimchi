@@ -70,6 +70,18 @@ var (
 			{Name: "bottom"},
 		},
 	}
+
+	// StackedThree is a vertical layout with three windows
+	StackedThree = Layout{
+		Name:      "stacked-three",
+		Direction: Vertical,
+		Ratios:    []int{25, 50, 25},
+		Slots: []Slot{
+			{Name: "top"},
+			{Name: "middle"},
+			{Name: "bottom"},
+		},
+	}
 )
 
 // Breakpoint defines when to switch layouts
@@ -84,11 +96,11 @@ type ResponsiveConfig struct {
 }
 
 // DefaultResponsive is the default responsive configuration
+// CommitList is always visible
 var DefaultResponsive = ResponsiveConfig{
 	Breakpoints: []Breakpoint{
-		{MinWidth: 120, Layout: ThreeSlot},
-		{MinWidth: 80, Layout: TwoColumn},
-		{MinWidth: 0, Layout: Stacked},
+		{MinWidth: 80, Layout: ThreeSlot},
+		{MinWidth: 0, Layout: StackedThree},
 	},
 }
 

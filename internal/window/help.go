@@ -87,6 +87,5 @@ func (h *Help) View(width, height int) string {
 
 	return style.
 		Width(contentWidth).
-		MaxHeight(contentHeight).
 		Render(content)
 }
