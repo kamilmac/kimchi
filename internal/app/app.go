@@ -215,9 +215,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FilesLoadedMsg:
 		a.state.SetFiles(msg.Files)
 		a.fileList.SetFiles(msg.Files)
-		// Auto-select first file if none selected
-		if a.state.SelectedFile == "" && len(msg.Files) > 0 {
-			a.state.SelectFile(0)
+		// Load diff for selected file
+		if a.state.SelectedFile != "" {
 			cmds = append(cmds, a.loadDiff())
 		}
 		return a, tea.Batch(cmds...)
