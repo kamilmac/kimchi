@@ -1,6 +1,6 @@
-# Kimchi - AI-Native IDE
+# Kimchi Design Document
 
-A read-first terminal IDE for AI-driven development workflows.
+A terminal user interface for code review and repository browsing, built with Rust and Ratatui.
 
 ## Vision
 
@@ -12,237 +12,166 @@ When AI writes code, you don't need a traditional IDE. You need:
 
 This is read-heavy, not write-heavy. The human reviews, the AI writes.
 
-## Problem
+## Architecture
 
-Current IDEs are built for humans writing code. In an AI workflow:
-- You constantly run `git diff` to see changes
-- You switch between terminal and editor
-- You lose track of what changed vs your spec
-- You trust blindly and review later
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         main.rs                              │
+│              Terminal setup, event loop                      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+┌─────────────────┐  ┌─────────────┐  ┌─────────────────┐
+│   EventHandler  │  │     App     │  │    Terminal     │
+│   (event.rs)    │  │  (app.rs)   │  │   (ratatui)     │
+│                 │  │             │  │                 │
+│ • Keyboard      │  │ • State     │  │ • Raw mode      │
+│ • File watcher  │  │ • Logic     │  │ • Rendering     │
+│ • Tick events   │  │ • Commands  │  │                 │
+└─────────────────┘  └─────────────┘  └─────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│   GitClient     │  │  GitHubClient   │  │   UI Widgets    │
+│  (git2 crate)   │  │   (gh CLI)      │  │                 │
+│                 │  │                 │  │ • FileList      │
+│ • Status        │  │ • PR info       │  │ • CommitList    │
+│ • Diff          │  │ • Comments      │  │ • DiffView      │
+│ • Log           │  │ • Reviews       │  │ • HelpModal     │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+```
 
-## Solution
+## Event Flow
 
-A lightweight TUI that serves as your primary interface when working with AI:
-- **Changed files** - what did the AI touch?
-- **Diff view** - what exactly changed?
-- **Commit history** - recent commits on the branch
-- **PR summary** - overview of the pull request
-- **All files** - browse the entire codebase
-- **Docs** - your specs alongside the implementation
+```
+User Input → EventHandler → App.handle_key() → State Update → render()
+     ▲                                              │
+     │              Widget State Updates ◄──────────┘
+     │                      │
+     └──────────────────────┘
+```
+
+1. EventHandler runs in separate thread, sends events via mpsc channel
+2. App receives events, updates state, delegates to focused widget
+3. On each frame, App renders all widgets with current state
+4. Commands (like open editor) are queued and executed after render
 
 ## Features
 
 ### Implemented
-- [x] Display list of changed files (git status)
-- [x] Tree view for file list with directories
-- [x] Show side-by-side diff for selected file
-- [x] Vim-style navigation (`j`/`k`)
-- [x] Fast navigation (`J`/`K` - 5 lines at a time)
-- [x] Auto-refresh on file changes (500ms debounce via fsnotify)
+- [x] Tree view of changed files with directories
+- [x] Side-by-side diff viewer with line numbers
+- [x] Vim-style navigation (j/k, J/K for fast)
+- [x] Auto-refresh on git changes (watches .git/index)
 - [x] Syntax highlighting for diffs (+ green, - red)
 - [x] Status bar (branch, mode, file count, diff stats)
-- [x] Yank path (`y` to copy file path to clipboard)
-- [x] Open in editor (`o` to open in $EDITOR)
+- [x] Yank path (y to copy file path to clipboard)
+- [x] Open in editor (o to open in $EDITOR with line number)
 - [x] Help modal with keybindings
 - [x] Unified mode system with 4 modes
-- [x] File content viewer for unchanged files
-- [x] PR comments - inline comments in diff view, "C" indicator on files with comments
-- [x] Folder selection - select directories to view combined diff
-- [x] PR summary view - when commit is selected, shows commit details + PR summary
-- [x] Line selection in diff view - navigate to specific lines with cursor
-- [x] Commit list window - shows last 8 commits
-- [x] Collapsible folders with aggregate status indicators
+- [x] File content viewer for browse mode
+- [x] PR comments - inline comments in diff view
+- [x] Folder selection - combined diff for directories
+- [x] PR summary view with commit details
+- [x] Line selection in diff view with cursor
+- [x] Commit list window (last 8 commits)
+- [x] Collapsible folders with status indicators
 
 ### Future
-- [ ] FileExplorer - full project tree navigation with expand/collapse
-- [ ] Markdown rendering - render markdown with formatting
-- [ ] Hooks/events for integration with AI agents (Claude Code, Cursor, Aider, etc.)
+- [ ] Markdown rendering
+- [ ] Hooks for AI agent integration
 
-## Architecture
+## Modes
 
-### Terminology
+| Key | Mode | Description |
+|-----|------|-------------|
+| 1 | ChangedWorking | Uncommitted changes (`git diff`) |
+| 2 | ChangedBranch | All changes vs base branch (`git diff <base>`) - default |
+| 3 | Browse | All tracked files in repository |
+| 4 | Docs | Markdown files only |
 
-| Term | Definition |
-|------|------------|
-| **Window** | A renderable component with its own state. Knows nothing about where it's placed. Given width/height, renders content. |
-| **Slot** | A named rectangular area in a layout. Has position and dimensions. Holds one window. |
-| **Layout** | Defines slot structure and arrangement. Knows nothing about window types. Handles responsive resizing. |
-| **Modal** | A presentation mode. Any window can be shown as a modal (floating, overlays layout, captures input). |
+Press `m` to cycle through modes.
 
-### Windows
+## Layout
 
-Windows implement a common interface. Layout doesn't care what type they are.
-
-| Window | Description |
-|--------|-------------|
-| `FileList` | Tree view of changed files with status indicators |
-| `CommitList` | List of recent commits on the branch |
-| `DiffView` | Diff preview for selected file (or folder diff, commit/PR summary) |
-| `FileView` | File content viewer for browse mode |
-| `Help` | Keybinding reference (modal) |
-
-Each window:
-- Has its own state (cursor position, scroll offset, etc.)
-- Has a header with relevant title
-- Can be focused or unfocused
-- Renders itself given width/height (doesn't know about layout)
-- Handles its own key events when focused
-
-### Modes
-
-Kimchi uses a unified mode system. All modes are accessed via `m` (cycle) or number keys (`1-4`):
-
-| Mode | Key | Description |
-|------|-----|-------------|
-| changed:working | `1` | Uncommitted changes only (`git diff`) |
-| changed:branch | `2` | All changes vs base branch (`git diff <base>`) - **default** |
-| browse | `3` | Browse all tracked files in repository |
-| docs | `4` | Browse markdown files only (*.md) |
-
-Mode switching:
-- `m` - Cycle through all modes in order
-- `1`/`2`/`3`/`4` - Jump directly to specific mode
-
-When browsing all files or docs, selecting an unchanged file shows its full content instead of a diff.
-
-### Selection Types
-
-The app tracks what is currently selected:
-
-| Selection | Preview Content |
-|-----------|-----------------|
-| File | Diff (in changed modes) or file content (in browse/docs modes) |
-| Folder | Combined diff of all changed files in folder |
-| Commit | Commit details + PR summary |
-
-### Layouts
-
-Three-slot layout for wider terminals, stacked for narrow:
+### Wide Layout (≥80 columns)
 
 ```
-ThreeSlot (width >= 80)              StackedThree (width < 80)
-┌───────────┬───────────────────┐    ┌─────────────────────────┐
-│ FileList  │                   │    │        FileList         │
-│   (30%)   │                   │    ├─────────────────────────┤
-├───────────┤   Preview (70%)   │    │       CommitList        │
-│CommitList │                   │    ├─────────────────────────┤
-│   (30%)   │                   │    │        Preview          │
-└───────────┴───────────────────┘    └─────────────────────────┘
+┌─────────────────┬──────────────────────────────────┐
+│                 │                                  │
+│    FileList     │            DiffView              │
+│                 │                                  │
+├─────────────────┤         (preview panel)          │
+│                 │                                  │
+│   CommitList    │                                  │
+│                 │                                  │
+└─────────────────┴──────────────────────────────────┘
+│                    Status Bar                      │
+└────────────────────────────────────────────────────┘
 ```
 
-Window assignments:
-```go
-assignments := map[string]string{
-    "left-top":    "filelist",
-    "left-bottom": "commitlist",
-    "right":       "diffview",  // or "fileview" in browse mode
-}
-```
-
-### Modal Presentation
-
-Help window is displayed as a modal overlay, centered on screen.
-
-## Default UI
+### Narrow Layout (<80 columns)
 
 ```
-┌─────────────────────┬──────────────────────────────────────┐
-│ Files (4)           │ src/main.go ────────────────── 42%   │
-│ ▼ src/              │  12 │ func main() {          │       │
-│   > main.go      M  │  13 │-    oldLine()          │       │
-│     app.go       M  │  14 │+    newLine()          │       │
-│ ▼ internal/         │  15 │+    anotherLine()      │       │
-│   ▼ git/            │  16 │ }                      │       │
-│       git.go     A  │                                      │
-├─────────────────────┤                                      │
-│ Commits (8)         │                                      │
-│ > abc1234 Add feat  │                                      │
-│   def5678 Fix bug   │                                      │
-├─────────────────────┴──────────────────────────────────────┤
-│ feature/blocks  [branch]  4 files  +127 -43                │
-└────────────────────────────────────────────────────────────┘
+┌────────────────────┐
+│     FileList       │
+├────────────────────┤
+│    CommitList      │
+├────────────────────┤
+│     DiffView       │
+├────────────────────┤
+│    Status Bar      │
+└────────────────────┘
 ```
 
-## Status Bar
+## Widgets
 
-Shows at-a-glance context:
+### FileList
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ feature/blocks  [branch]  4 files  +127 -43              │
-└──────────────────────────────────────────────────────────┘
-  │                │        │        │
-  │                │        │        └── Total diff stats
-  │                │        └── File count
-  │                └── Current mode (working/branch/browse/docs)
-  └── Current branch
-```
+Tree view of files with directory nesting.
 
-## FileList Window
-
-### Tree View
-
-Files are displayed as a tree with directories:
 ```
 Files (4)
 ▼ src/
-  > main.go           M
-    app.go            M
+  > main.rs           M
+    app.rs            M
 ▼ internal/
   ▼ git/
-      git.go          A
+      client.rs       A
   README.md           M
 ```
 
-- Header shows "Files (N)" or "Browse (N)" based on mode
-- Directories shown with `▼`/`▶` prefix (expanded/collapsed)
-- `h` collapses focused folder, `l` expands it
-- Collapsed folders show aggregated status indicators
-- Root entry (`./`) shows combined view or PR summary
-- `j`/`k` for up/down, `J`/`K` for fast navigation (5 lines)
-- `g`/`G` for top/bottom
+- Directories shown with ▼/▶ prefix (expanded/collapsed)
+- h collapses folder, l expands it
+- Status indicators: M (modified), A (added), D (deleted), R (renamed)
+- C marker for files with PR comments
+- Color-coded by git status
 
-### Status Indicators
-- `M` - Modified (orange)
-- `A` - Added (green)
-- `D` - Deleted (red)
-- `?` - Untracked (muted)
-- `R` - Renamed (purple)
-- `C` - Has PR comments (shown alongside status)
-- ` ` - Unchanged (no indicator, in browse/docs modes)
+### CommitList
 
-## CommitList Window
-
-Shows recent commits on the branch:
+Recent commits (default: 8).
 
 ```
 Commits (8)
 > abc1234 Add new feature for handling...
   def5678 Fix bug in authentication
-  ghi9012 Update documentation
 ```
 
-- Header shows "Commits (N)"
-- Displays last 8 commits
-- Selectable - when selected, preview shows commit details + PR summary
-- `j`/`k` for navigation when focused
+- When focused, preview shows commit summary with PR info
 
-## DiffView Window
+### DiffView
 
-### Content Types
+Side-by-side diff viewer with inline PR comments.
 
-The DiffView displays different content based on selection:
+**Content Types:**
+- `FileDiff` - Unified diff for single file
+- `FolderDiff` - Combined diff for directory
+- `FileContent` - Raw file content (browse mode, single column)
+- `CommitSummary` - Commit metadata with PR reviews
 
-| Selection | Content |
-|-----------|---------|
-| File with changes | Side-by-side diff |
-| File without changes | File content with line numbers |
-| Folder | Combined diff of all changed files in folder |
-| Commit | Commit details + PR summary |
-
-### Display Format
-
-Side-by-side diff with syntax highlighting:
+**Display Format:**
 ```
   12 │ context line            │   12 │ context line
   13 │-removed line            │      │
@@ -250,353 +179,223 @@ Side-by-side diff with syntax highlighting:
   14 │ context line            │   14 │ context line
 ```
 
-Colors:
-- Green (`#a6e3a1`) for additions (`+`)
-- Red (`#f38ba8`) for removals (`-`)
-- Muted for context lines
+**Inline Comments:**
+```
+  37 │ let result = process(); │   37 │ let result = process();
+     │ 💬 kamilmac
+     │    cool!
+  38 │ return result;          │   38 │ return result;
+```
 
-### Line Selection
+### HelpModal
 
-DiffView supports line-by-line navigation with a cursor:
-- Cursor highlights the current line (reverse video)
-- `j`/`k` moves cursor up/down one line
-- `J`/`K` moves cursor 5 lines (fast navigation)
-- `y` copies file path with current line number (`path/to/file.go:42`)
+Modal overlay showing all keybindings, toggled with `?`.
 
-### Scrolling
-
-- `j`/`k`: move cursor line by line
-- `J`/`K`: move cursor 5 lines (fast navigation)
-- `Ctrl+d`/`Ctrl+u`: half-page scroll
-- `g`/`G`: top/bottom
-
-Title shows file path and scroll position percentage.
-
-### Commit & PR Summary
-
-When a commit is selected in CommitList:
-- Shows commit hash, author, date
-- Shows commit message
-- Shows PR summary if PR exists (title, description, reviews, comments)
-
-## Keybindings
+## Key Bindings
 
 ### Navigation
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `J` | Fast down (5 lines) |
-| `K` | Fast up (5 lines) |
-| `h` | Collapse folder |
-| `l` | Expand folder |
-| `Tab` | Cycle focus clockwise |
-| `Shift+Tab` | Cycle focus counter-clockwise |
-| `Ctrl+d` | Scroll half-page down |
-| `Ctrl+u` | Scroll half-page up |
-| `g` | Go to top |
-| `G` | Go to bottom |
 
-### Modes
 | Key | Action |
 |-----|--------|
-| `m` | Cycle through all modes |
-| `1` | changed:working mode |
-| `2` | changed:branch mode |
-| `3` | browse mode |
-| `4` | docs mode |
+| j / ↓ | Move down |
+| k / ↑ | Move up |
+| J / K | Fast move (5 lines) |
+| h | Collapse folder |
+| l | Expand folder |
+| Tab | Next window |
+| Shift+Tab | Previous window |
+| Ctrl+d | Page down |
+| Ctrl+u | Page up |
+| g | Go to top |
+| G | Go to bottom |
 
 ### Actions
+
 | Key | Action |
 |-----|--------|
-| `Enter` | Select item |
-| `y` | Yank (copy) file path to clipboard (with line number in diff view) |
-| `o` | Open file in $EDITOR |
-| `r` | Refresh |
-| `?` | Toggle help modal |
-| `Escape` | Close modal |
-| `q` | Quit |
+| y | Yank path to clipboard (with line number in diff) |
+| o | Open in $EDITOR |
+| r | Refresh |
+| ? | Toggle help |
+| q / Ctrl+C | Quit |
 
-## CLI Arguments
+## Data Structures
 
+### Core Types
+
+```rust
+pub enum FileStatus {
+    Modified, Added, Deleted, Renamed, Untracked, Unchanged
+}
+
+pub enum DiffMode {
+    Working,  // git diff
+    Branch,   // git diff <base>
+}
+
+pub enum AppMode {
+    ChangedWorking,  // Mode 1
+    ChangedBranch,   // Mode 2
+    Browse,          // Mode 3
+    Docs,            // Mode 4
+}
+
+pub struct StatusEntry {
+    pub path: String,
+    pub status: FileStatus,
+}
+
+pub struct Commit {
+    pub hash: String,
+    pub short_hash: String,
+    pub author: String,
+    pub date: String,
+    pub subject: String,
+}
 ```
-blocks [flags] [path]
 
-Arguments:
-  path              Target directory (default: current dir)
+### GitHub Types
 
-Flags:
-  -m, --mode        Start in mode: working, branch (default: branch)
-  -b, --base        Base branch for branch mode (default: auto-detect)
-  -h, --help        Show help
-  -v, --version     Show version
+```rust
+pub struct PrInfo {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub author: String,
+    pub state: String,
+    pub url: String,
+    pub reviews: Vec<Review>,
+    pub comments: Vec<Comment>,
+    pub file_comments: HashMap<String, Vec<Comment>>,
+}
+
+pub struct Comment {
+    pub author: String,
+    pub body: String,
+    pub path: Option<String>,
+    pub line: Option<u32>,
+}
 ```
-
-## Auto-Refresh
-
-File changes are detected via fsnotify watching:
-- `.git/index` - staging changes
-- `.git/HEAD` - branch changes
-- `.git/refs/heads/` - commits
-- Working directory (excluding `.git`, `node_modules`, `vendor`, `__pycache__`, hidden dirs)
-
-Changes trigger refresh after 500ms debounce.
 
 ## Git Integration
 
-### Base Branch Detection
-1. Try configured base branch (via `--base` flag)
-2. Try `git config init.defaultBranch`
-3. Try common names: `main`, `master`
-4. Try remotes: `origin/main`, `origin/master`
+Uses libgit2 (git2 crate) for native performance:
+
+- Repository opening with path resolution
+- Status checking via index/workdir comparison
+- Diff generation between commits/trees
+- Commit history traversal
+- Base branch auto-detection (main, master, origin/*)
+- File content reading from HEAD tree
 
 ## GitHub Integration
 
-Kimchi integrates with GitHub via the `gh` CLI for PR-related features:
+Uses gh CLI for GitHub API access:
 
-### PR Detection
-- Automatically detects if current branch has an open PR
-- Polls for updates every 60 seconds
+- PR detection for current branch
+- Review fetching with approval state
+- Inline comment fetching mapped to file paths and lines
+- Polling every 60 seconds for updates
 
-### PR Information
-When a PR exists, the following is available:
-- PR title and description
-- Author and status (open/merged/closed)
-- Review comments and inline comments
-- Comment authors and timestamps
+## File Watching
 
-### Inline Comments
-- Files with PR comments show "C" indicator in file list
-- Comments displayed inline in diff view at the relevant lines
-- Comment threading supported
+Watches `.git/index` for changes using notify crate:
 
-## Error States
+- Debounced at 500ms to avoid excessive refreshes
+- Triggers FileChanged event on git operations
+- Auto-refreshes file list and diff
 
-| Condition | Behavior |
-|-----------|----------|
-| Not a git repo | Show message: "Not a git repository" with hint |
-| No changes | Show empty state: "No changes" |
-| Git command fails | Show error, keep last good state |
-| Base branch not found | Fall back gracefully |
-| Large diffs | Truncate at 10,000 lines with message |
-| No `gh` CLI | PR features disabled gracefully |
+## Configuration
 
-## Technical Stack
+Hardcoded with Catppuccin Mocha color scheme:
 
-- **Language**: Go
-- **TUI Framework**: Bubbletea
-- **Styling**: Lipgloss
-- **File Watching**: fsnotify
-- **Git Operations**: Shell out to git CLI
-- **GitHub Operations**: Shell out to gh CLI
+```rust
+Colors {
+    added: Rgb(166, 227, 161),      // Green
+    removed: Rgb(243, 139, 168),    // Red
+    modified: Rgb(250, 179, 135),   // Peach
+    renamed: Rgb(203, 166, 247),    // Mauve
+    header: Rgb(137, 180, 250),     // Blue
+    text: Rgb(205, 214, 244),       // Text
+    comment: Rgb(249, 226, 175),    // Yellow
+    border: Rgb(69, 71, 90),        // Surface1
+    border_focused: Rgb(137, 180, 250), // Blue
+}
+```
+
+Layout settings:
+- Left panel: 30%
+- Right panel: 70%
+- Responsive breakpoint: 80 columns
+- Max commits: 8
+- File watcher debounce: 500ms
+- PR poll interval: 60 seconds
+
+## External Editor Support
+
+Opens files in `$EDITOR` with line number support:
+
+- **vim/nvim**: `+{line}` argument
+- **helix**: `{file}:{line}` format
+- Terminal suspended during editor session
+- Event polling paused to prevent interference
+- Auto-refresh on editor close
 
 ## Project Structure
 
 ```
-blocks/
-├── main.go                 # Entry point, CLI flags, app bootstrap
-├── internal/
-│   ├── app/
-│   │   ├── app.go          # tea.Model, orchestration, Update/View
-│   │   ├── state.go        # Shared state struct & transitions
-│   │   ├── mode.go         # AppMode, Selection, SelectionType
-│   │   └── messages.go     # All message types
-│   ├── config/
-│   │   └── config.go       # Centralized config: colors, styles, keybindings
-│   ├── layout/
-│   │   └── layout.go       # Layout definitions & rendering
-│   ├── window/
-│   │   ├── window.go       # Window interface
-│   │   ├── base.go         # Common window functionality
-│   │   ├── filelist.go     # FileList with tree view
-│   │   ├── commitlist.go   # CommitList for recent commits
-│   │   ├── diffview.go     # DiffView with syntax highlighting
-│   │   ├── fileview.go     # FileView for browse mode
-│   │   ├── prsummary.go    # PR summary renderer
-│   │   └── help.go         # Help modal
-│   ├── git/
-│   │   ├── git.go          # Types, interface, enums
-│   │   └── client.go       # GitClient implementation
-│   ├── github/
-│   │   └── github.go       # GitHub client for PR data
-│   └── watcher/
-│       └── watcher.go      # File system watcher
-├── docs/
-│   └── design.md
-├── go.mod
-└── go.sum
+src/
+├── main.rs           # Entry point, terminal setup, event loop
+├── app.rs            # Main application state and logic
+├── event.rs          # Event handling (keyboard, file watching, ticks)
+├── config.rs         # Configuration, colors, layout settings
+├── git/
+│   ├── mod.rs        # Git module exports
+│   ├── types.rs      # Git data structures
+│   └── client.rs     # Git operations using libgit2
+├── github/
+│   └── mod.rs        # GitHub API client using gh CLI
+└── ui/
+    ├── mod.rs        # UI module exports
+    ├── layout.rs     # Layout computation (responsive grid)
+    └── widgets/
+        ├── mod.rs
+        ├── file_list.rs    # Tree view widget
+        ├── commit_list.rs  # Commit history widget
+        ├── diff_view.rs    # Diff/content preview widget
+        └── help.rs         # Help modal widget
 ```
 
-## Key Interfaces
+## Dependencies
 
-```go
-// window/window.go
-type Window interface {
-    Update(msg tea.Msg) (Window, tea.Cmd)
-    View(width, height int) string
-    Focused() bool
-    SetFocus(bool)
-    Name() string
-}
-
-// git/git.go
-type Client interface {
-    Status(mode DiffMode) ([]FileStatus, error)
-    ListAllFiles() ([]FileStatus, error)
-    ListDocFiles() ([]FileStatus, error)
-    Diff(path string, mode DiffMode) (string, error)
-    ReadFile(path string) (string, error)
-    Log() ([]Commit, error)
-    BaseBranch() (string, error)
-    CurrentBranch() (string, error)
-    DiffStats(mode DiffMode) (added, removed int, err error)
-    IsRepo() bool
-}
-
-// github/github.go
-type Client interface {
-    IsAvailable() bool
-    HasRemote() bool
-    GetPRForBranch() (*PRInfo, error)
-}
+```toml
+ratatui = "0.29"           # TUI framework
+crossterm = "0.28"         # Terminal handling
+git2 = "0.19"              # Native git operations
+notify = "7"               # File watching
+notify-debouncer-mini      # Debounced events
+clap = "4"                 # CLI parsing
+arboard = "3"              # Clipboard
+serde/serde_json           # JSON parsing
+anyhow/thiserror           # Error handling
+chrono = "0.4"             # Date formatting
+unicode-width = "0.2"      # Text width calculation
 ```
 
-## State Management
+## Performance
 
-Centralized state with message-based updates (Elm architecture):
+- Native libgit2 (no shell overhead for git)
+- Debounced file watching (500ms)
+- Lazy PR polling (60s intervals)
+- Offset-based viewport rendering
+- Release build: LTO, single codegen unit, stripped binary
 
-```go
-// AppMode represents the unified mode
-type AppMode int
-const (
-    ModeChangedWorking AppMode = iota  // 1
-    ModeChangedBranch                   // 2
-    ModeBrowse                          // 3
-    ModeDocs                            // 4
-)
+## Error Handling
 
-// SelectionType represents what is selected
-type SelectionType int
-const (
-    SelectionNone SelectionType = iota
-    SelectionFile
-    SelectionFolder
-    SelectionCommit
-)
-
-// Selection tracks current selection
-type Selection struct {
-    Type       SelectionType
-    FilePath   string
-    FolderPath string
-    Children   []string
-    Commit     *git.Commit
-}
-
-// State holds all app state
-type State struct {
-    Mode      AppMode
-    Selection Selection
-
-    Files         []git.FileStatus
-    SelectedIndex int
-    DiffContent   string
-
-    Branch     string
-    BaseBranch string
-    DiffAdded   int
-    DiffRemoved int
-
-    FocusedWindow string
-    ActiveModal   string
-
-    PR    *github.PRInfo
-    Error string
-}
-```
-
-Message flow:
-```
-User Input → App.Update() → Global keys or delegate to window
-    → Window returns command → App receives message
-    → State update → Re-render
-```
-
-## Configuration
-
-All configuration is centralized in `internal/config/config.go`:
-
-### Window/Modal Names
-```go
-const (
-    WindowFileList   = "filelist"
-    WindowCommitList = "commitlist"
-    WindowDiffView   = "diffview"
-    WindowFileView   = "fileview"
-    ModalHelp        = "help"
-)
-```
-
-### Timing
-```go
-const (
-    PRPollInterval      = 60 * time.Second
-    FileWatcherDebounce = 500 * time.Millisecond
-)
-```
-
-### Layout
-```go
-const (
-    LayoutLeftRatio  = 30  // percentage
-    LayoutRightRatio = 70
-    LayoutBreakpoint = 80  // columns
-)
-```
-
-### Diff View
-```go
-const (
-    DiffPaneMinWidth = 40
-    DiffLineNumWidth = 4
-    DiffMaxLines     = 10000
-    DiffTabWidth     = 4
-)
-```
-
-### Keybindings
-```go
-var DefaultKeyMap = KeyMap{
-    Up:       key.NewBinding(key.WithKeys("k", "up")),
-    Down:     key.NewBinding(key.WithKeys("j", "down")),
-    Left:     key.NewBinding(key.WithKeys("h")),
-    Right:    key.NewBinding(key.WithKeys("l")),
-    FastUp:   key.NewBinding(key.WithKeys("K")),
-    FastDown: key.NewBinding(key.WithKeys("J")),
-    Tab:      key.NewBinding(key.WithKeys("tab")),
-    ShiftTab: key.NewBinding(key.WithKeys("shift+tab")),
-    // ... etc
-}
-```
-
-### Colors (Catppuccin Mocha)
-```go
-var DefaultColors = Colors{
-    Added:    "#a6e3a1",  // Green
-    Removed:  "#f38ba8",  // Red
-    Modified: "#fab387",  // Peach
-    Renamed:  "#cba6f7",  // Mauve
-    Header:   "#89b4fa",  // Blue
-    Muted:    "#6c7086",  // Overlay0
-    // ...
-}
-```
-
-## Future: Docs Integration
-
-The workflow: write markdown specs → AI implements → review changes.
-
-Potential features:
-- **DocsView** - Markdown viewer in terminal with rendering
-- **Spec linking** - Associate a spec with current work/branch
-- **Split context** - Spec on left, implementation diff on right
+- Uses `anyhow::Result<T>` throughout
+- Context wrapping for helpful error messages
+- Graceful fallbacks:
+  - Missing gh CLI: PR features disabled
+  - Missing base branch: falls back to working status
+  - Binary files: shows "Binary file" message
+  - Unreadable files: returns empty/default
