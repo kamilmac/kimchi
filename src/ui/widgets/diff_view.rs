@@ -264,8 +264,8 @@ impl DiffViewState {
 }
 
 fn is_binary(content: &str) -> bool {
-    let check_len = content.len().min(8192);
-    content[..check_len].contains('\0')
+    // Check first ~8KB for null bytes, but ensure we don't slice mid-character
+    content.chars().take(8192).any(|c| c == '\0')
 }
 
 fn parse_diff(content: &str) -> Vec<DiffLine> {
