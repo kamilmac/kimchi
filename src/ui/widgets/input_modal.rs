@@ -268,7 +268,7 @@ impl<'a> Widget for InputModal<'a> {
             paragraph.render(inner, buf);
         } else {
             // Show confirmation prompt (for approve)
-            let lines = vec![
+            let mut lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
                     "Are you sure you want to approve this PR?",
@@ -285,6 +285,15 @@ impl<'a> Widget for InputModal<'a> {
                     Span::styled(" to cancel", self.colors.style_muted()),
                 ]),
             ];
+
+            // Show error if any
+            if let Some(error) = &self.state.error {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    error.clone(),
+                    self.colors.style_removed(),
+                )));
+            }
 
             let paragraph = Paragraph::new(lines)
                 .alignment(Alignment::Center)
