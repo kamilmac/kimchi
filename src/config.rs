@@ -141,7 +141,7 @@ impl Default for Layout {
             diff_line_num_width: 4,
             diff_tab_width: 4,
             max_commits: 8,
-            browse_collapse_depth: 1, // Collapse folders at depth 1+
+            browse_collapse_depth: 2, // Collapse folders at depth 2+
         }
     }
 }
