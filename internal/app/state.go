@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
 )
@@ -40,7 +41,7 @@ type State struct {
 func NewState() *State {
 	return &State{
 		DiffMode:      git.DiffModeBranch,
-		FocusedWindow: WindowFileList,
+		FocusedWindow: config.WindowFileList,
 	}
 }
 

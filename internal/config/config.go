@@ -1,6 +1,81 @@
-package ui
+package config
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// =============================================================================
+// Window and Modal Names
+// =============================================================================
+
+const (
+	WindowFileList = "filelist"
+	WindowDiffView = "diffview"
+	WindowHelp     = "help"
+)
+
+const (
+	ModalHelp = "help"
+)
+
+// =============================================================================
+// Timing Configuration
+// =============================================================================
+
+const (
+	PRPollInterval     = 60 * time.Second
+	FileWatcherDebounce = 500 * time.Millisecond
+)
+
+// =============================================================================
+// Colors
+// =============================================================================
+
+// Colors defines the color palette for the application
+type Colors struct {
+	// Diff colors
+	Added    lipgloss.Color
+	Removed  lipgloss.Color
+	Modified lipgloss.Color
+	Renamed  lipgloss.Color
+	Context  lipgloss.Color
+
+	// UI colors
+	Header          lipgloss.Color
+	BorderFocused   lipgloss.Color
+	BorderUnfocused lipgloss.Color
+	StatusBar       lipgloss.Color
+	StatusBarText   lipgloss.Color
+	Muted           lipgloss.Color
+	Text            lipgloss.Color
+	ModalBackground lipgloss.Color
+}
+
+// DefaultColors is the default color palette (Catppuccin Mocha)
+var DefaultColors = Colors{
+	// Diff colors
+	Added:    lipgloss.Color("#a6e3a1"), // Green
+	Removed:  lipgloss.Color("#f38ba8"), // Red
+	Modified: lipgloss.Color("#fab387"), // Peach
+	Renamed:  lipgloss.Color("#cba6f7"), // Mauve
+	Context:  lipgloss.Color("#cdd6f4"), // Text
+
+	// UI colors
+	Header:          lipgloss.Color("#89b4fa"), // Blue
+	BorderFocused:   lipgloss.Color("#89b4fa"), // Blue
+	BorderUnfocused: lipgloss.Color("#45475a"), // Surface1
+	StatusBar:       lipgloss.Color("#313244"), // Surface0
+	StatusBarText:   lipgloss.Color("#cdd6f4"), // Text
+	Muted:           lipgloss.Color("#6c7086"), // Overlay0
+	Text:            lipgloss.Color("#cdd6f4"), // Text
+	ModalBackground: lipgloss.Color("#1e1e2e"), // Base
+}
+
+// =============================================================================
+// Styles
+// =============================================================================
 
 // Styles holds all the lipgloss styles for the application
 type Styles struct {

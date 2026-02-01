@@ -8,10 +8,10 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
 	"github.com/kmacinski/blocks/internal/keys"
-	"github.com/kmacinski/blocks/internal/ui"
 )
 
 // lineLocation maps a rendered line to its source file and line number
@@ -43,7 +43,7 @@ type DiffView struct {
 }
 
 // NewDiffView creates a new diff view window
-func NewDiffView(styles ui.Styles) *DiffView {
+func NewDiffView(styles config.Styles) *DiffView {
 	return &DiffView{
 		Base:       NewBase("diffview", styles),
 		style:      git.DiffStyleUnified,

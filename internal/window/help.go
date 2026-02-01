@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kmacinski/blocks/internal/ui"
+	"github.com/kmacinski/blocks/internal/config"
 )
 
 // Help displays keybinding help
@@ -15,7 +15,7 @@ type Help struct {
 }
 
 // NewHelp creates a new help window
-func NewHelp(styles ui.Styles) *Help {
+func NewHelp(styles config.Styles) *Help {
 	return &Help{
 		Base: NewBase("help", styles),
 	}

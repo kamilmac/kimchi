@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/github"
-	"github.com/kmacinski/blocks/internal/ui"
 )
 
 // PRSummaryRenderer handles rendering of PR summary views
 type PRSummaryRenderer struct {
-	styles ui.Styles
+	styles config.Styles
 }
 
 // NewPRSummaryRenderer creates a new PR summary renderer
-func NewPRSummaryRenderer(styles ui.Styles) *PRSummaryRenderer {
+func NewPRSummaryRenderer(styles config.Styles) *PRSummaryRenderer {
 	return &PRSummaryRenderer{styles: styles}
 }
 

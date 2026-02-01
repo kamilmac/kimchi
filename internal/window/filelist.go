@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
 	"github.com/kmacinski/blocks/internal/keys"
-	"github.com/kmacinski/blocks/internal/ui"
 )
 
 // treeNode represents a node in the file tree
@@ -50,7 +50,7 @@ type FileList struct {
 }
 
 // NewFileList creates a new file list window
-func NewFileList(styles ui.Styles) *FileList {
+func NewFileList(styles config.Styles) *FileList {
 	return &FileList{
 		Base: NewBase("filelist", styles),
 	}
