@@ -39,7 +39,15 @@ var (
 		Direction: Horizontal,
 		Ratios:    []int{config.LayoutLeftRatio, config.LayoutRightRatio},
 		Slots: []Slot{
-			{Name: "left"},
+			{
+				Name:      "left",
+				Direction: Vertical,
+				Ratios:    []int{70, 30}, // files 70%, commits 30%
+				Children: []Slot{
+					{Name: "left-top"},
+					{Name: "left-bottom"},
+				},
+			},
 			{Name: "right"},
 		},
 	}
@@ -47,9 +55,10 @@ var (
 	Stacked = Layout{
 		Name:      "stacked",
 		Direction: Vertical,
-		Ratios:    []int{config.LayoutLeftRatio, config.LayoutRightRatio},
+		Ratios:    []int{30, 15, 55}, // files, commits, diff
 		Slots: []Slot{
 			{Name: "top"},
+			{Name: "middle"},
 			{Name: "bottom"},
 		},
 	}

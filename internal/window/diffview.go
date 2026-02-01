@@ -1,9 +1,7 @@
 package window
-
 import (
 	"fmt"
 	"strings"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,15 +9,12 @@ import (
 	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
-	"github.com/kmacinski/blocks/internal/keys"
 )
-
 // lineLocation maps a rendered line to its source file and line number
 type lineLocation struct {
 	filePath string
 	lineNum  int
 }
-
 // DiffView displays a diff
 type DiffView struct {
 	Base
@@ -33,24 +28,20 @@ type DiffView struct {
 	ready      bool
 	width      int
 	height     int
-
 	// Line tracking for editor navigation
 	lineMap []lineLocation // maps rendered line index to file/line
 	cursor  int            // cursor position within viewport (0 = first visible line)
-
 	// PR summary renderer
 	prRenderer *PRSummaryRenderer
 }
-
 // NewDiffView creates a new diff view window
 func NewDiffView(styles config.Styles) *DiffView {
 	return &DiffView{
 		Base:       NewBase("diffview", styles),
-		style:      git.DiffStyleUnified,
+		style:      git.DiffStyleSideBySide,
 		prRenderer: NewPRSummaryRenderer(styles),
 	}
 }
-
 // GetSelectedLocation returns the file path and line number at cursor
 func (d *DiffView) GetSelectedLocation() (filePath string, lineNum int) {
 	if len(d.lineMap) == 0 {
@@ -70,7 +61,6 @@ func (d *DiffView) GetSelectedLocation() (filePath string, lineNum int) {
 	}
 	return loc.filePath, loc.lineNum
 }
-
 // SetContent updates the diff content
 func (d *DiffView) SetContent(content string, filePath string) {
 	d.content = content
@@ -84,8 +74,6 @@ func (d *DiffView) SetContent(content string, filePath string) {
 		d.viewport.GotoTop()
 	}
 }
-
-
 // SetStyle updates the diff display style
 func (d *DiffView) SetStyle(style git.DiffStyle) {
 	d.style = style
@@ -94,7 +82,6 @@ func (d *DiffView) SetStyle(style git.DiffStyle) {
 		d.viewport.SetContent(styled)
 	}
 }
-
 // SetPR sets the PR info for inline comments
 func (d *DiffView) SetPR(pr *github.PRInfo) {
 	d.pr = pr
@@ -103,7 +90,6 @@ func (d *DiffView) SetPR(pr *github.PRInfo) {
 		d.viewport.SetContent(d.renderContent(d.content))
 	}
 }
-
 // SetFolderContent sets content for a folder or PR summary view
 func (d *DiffView) SetFolderContent(content string, folderPath string, isRoot bool, pr *github.PRInfo) {
 	d.content = content
@@ -112,7 +98,6 @@ func (d *DiffView) SetFolderContent(content string, folderPath string, isRoot bo
 	d.isRoot = isRoot
 	d.pr = pr
 	d.cursor = 0
-
 	if d.ready {
 		var styled string
 		if isRoot {
@@ -124,38 +109,35 @@ func (d *DiffView) SetFolderContent(content string, folderPath string, isRoot bo
 		d.viewport.GotoTop()
 	}
 }
-
 // Update handles input
 func (d *DiffView) Update(msg tea.Msg) (Window, tea.Cmd) {
 	if !d.focused {
 		return d, nil
 	}
-
 	var cmd tea.Cmd
 	totalLines := len(d.lineMap)
 	if totalLines == 0 {
 		totalLines = 1
 	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.DefaultKeyMap.Down):
+		case key.Matches(msg, config.DefaultKeyMap.Down):
 			d.moveCursor(1, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.Up):
+		case key.Matches(msg, config.DefaultKeyMap.Up):
 			d.moveCursor(-1, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.FastDown):
+		case key.Matches(msg, config.DefaultKeyMap.FastDown):
 			d.moveCursor(5, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.FastUp):
+		case key.Matches(msg, config.DefaultKeyMap.FastUp):
 			d.moveCursor(-5, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.HalfPgDn):
+		case key.Matches(msg, config.DefaultKeyMap.HalfPgDn):
 			d.moveCursor(d.viewport.Height/2, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.HalfPgUp):
+		case key.Matches(msg, config.DefaultKeyMap.HalfPgUp):
 			d.moveCursor(-d.viewport.Height/2, totalLines)
-		case key.Matches(msg, keys.DefaultKeyMap.GotoTop):
+		case key.Matches(msg, config.DefaultKeyMap.GotoTop):
 			d.viewport.GotoTop()
 			d.cursor = 0
-		case key.Matches(msg, keys.DefaultKeyMap.GotoBot):
+		case key.Matches(msg, config.DefaultKeyMap.GotoBot):
 			d.viewport.GotoBottom()
 			d.cursor = min(d.viewport.Height-1, totalLines-1-d.viewport.YOffset)
 		default:
@@ -164,14 +146,11 @@ func (d *DiffView) Update(msg tea.Msg) (Window, tea.Cmd) {
 	default:
 		d.viewport, cmd = d.viewport.Update(msg)
 	}
-
 	return d, cmd
 }
-
 func (d *DiffView) moveCursor(delta int, totalLines int) {
 	// Calculate absolute line position
 	absLine := d.viewport.YOffset + d.cursor + delta
-
 	// Clamp to valid range
 	if absLine < 0 {
 		absLine = 0
@@ -179,7 +158,6 @@ func (d *DiffView) moveCursor(delta int, totalLines int) {
 	if absLine >= totalLines {
 		absLine = totalLines - 1
 	}
-
 	// Update cursor and viewport
 	if absLine < d.viewport.YOffset {
 		// Scroll up
@@ -194,27 +172,22 @@ func (d *DiffView) moveCursor(delta int, totalLines int) {
 		d.cursor = absLine - d.viewport.YOffset
 	}
 }
-
 // View renders the diff view
 func (d *DiffView) View(width, height int) string {
 	d.width = width
 	d.height = height
-
 	var style lipgloss.Style
 	if d.focused {
 		style = d.styles.WindowFocused
 	} else {
 		style = d.styles.WindowUnfocused
 	}
-
 	// Calculate content dimensions
 	contentWidth := width - 2   // borders
 	contentHeight := height - 2 // borders
-
 	if contentWidth < 1 || contentHeight < 1 {
 		return ""
 	}
-
 	// Initialize or resize viewport
 	if !d.ready {
 		d.viewport = viewport.New(contentWidth, contentHeight-1) // -1 for title
@@ -234,10 +207,8 @@ func (d *DiffView) View(width, height int) string {
 			d.viewport.SetContent(d.renderContent(d.content))
 		}
 	}
-
 	// Build content
 	var lines []string
-
 	// Title with scroll position
 	titleText := d.getTitle()
 	hasContent := d.content != "" || d.isRoot
@@ -253,7 +224,6 @@ func (d *DiffView) View(width, height int) string {
 		titleText = d.styles.WindowTitle.Render(titleText)
 	}
 	lines = append(lines, titleText)
-
 	// Viewport content
 	if !hasContent {
 		emptyMsg := d.styles.Muted.Render("Select a file to view diff")
@@ -276,15 +246,12 @@ func (d *DiffView) View(width, height int) string {
 		}
 		lines = append(lines, viewportContent)
 	}
-
 	content := strings.Join(lines, "\n")
-
 	return style.
 		Width(contentWidth).
 		Height(height - 2).
 		Render(content)
 }
-
 func (d *DiffView) formatScrollPos() string {
 	p := d.viewport.ScrollPercent() * 100
 	if p <= 0 {
@@ -295,7 +262,6 @@ func (d *DiffView) formatScrollPos() string {
 	}
 	return fmt.Sprintf("%d%%", int(p))
 }
-
 func (d *DiffView) getTitle() string {
 	if d.isRoot {
 		return "PR Summary"
@@ -305,20 +271,16 @@ func (d *DiffView) getTitle() string {
 	}
 	return "Diff"
 }
-
 func (d *DiffView) renderPRSummary() string {
 	d.lineMap = nil // No line navigation for PR summary
 	return d.prRenderer.Render(d.pr)
 }
-
 func (d *DiffView) renderContent(content string) string {
 	if content == "" {
 		return ""
 	}
-
 	// Check if content is a diff or plain file
 	isDiff := d.isDiffContent(content)
-
 	if d.style == git.DiffStyleSideBySide {
 		if isDiff {
 			return d.renderSideBySide(content)
@@ -330,7 +292,6 @@ func (d *DiffView) renderContent(content string) string {
 	}
 	return d.renderPlainFile(content)
 }
-
 // isDiffContent checks if content looks like a git diff
 func (d *DiffView) isDiffContent(content string) bool {
 	lines := strings.SplitN(content, "\n", 5)
@@ -344,7 +305,6 @@ func (d *DiffView) isDiffContent(content string) bool {
 	}
 	return false
 }
-
 // renderPlainFile renders file content without line numbers (unified style)
 func (d *DiffView) renderPlainFile(content string) string {
 	var styled []string
@@ -357,49 +317,40 @@ func (d *DiffView) renderPlainFile(content string) string {
 	d.lineMap = lineMap
 	return strings.Join(styled, "\n")
 }
-
 // renderFileWithLineNumbers renders file content with line numbers (split style)
 func (d *DiffView) renderFileWithLineNumbers(content string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	var lineMap []lineLocation
-
 	// Calculate line number width based on total lines
 	numWidth := len(fmt.Sprintf("%d", len(lines)))
 	if numWidth < 4 {
 		numWidth = 4
 	}
-
 	for i, line := range lines {
 		lineNum := i + 1
 		numStr := fmt.Sprintf("%*d", numWidth, lineNum)
-
 		// Handle tabs
 		line = strings.ReplaceAll(line, "\t", "    ")
-
 		// Truncate if needed
 		maxWidth := d.viewport.Width - numWidth - 2 // -2 for " │"
 		if maxWidth > 0 && len([]rune(line)) > maxWidth {
 			runes := []rune(line)
 			line = string(runes[:maxWidth-1]) + "…"
 		}
-
 		styledNum := d.styles.Muted.Render(numStr + " │")
 		styledLine := d.styles.DiffContext.Render(line)
 		result = append(result, styledNum+styledLine)
 		lineMap = append(lineMap, lineLocation{filePath: d.filePath, lineNum: lineNum})
 	}
-
 	d.lineMap = lineMap
 	return strings.Join(result, "\n")
 }
-
 func (d *DiffView) styleUnifiedDiff(content string) string {
 	if content == "" {
 		d.lineMap = nil
 		return ""
 	}
-
 	// Build a map of comments by line number (per file)
 	commentsByFile := make(map[string]map[int][]github.LineComment)
 	if d.pr != nil {
@@ -410,22 +361,18 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 			}
 		}
 	}
-
 	var styled []string
 	var lineMap []lineLocation
 	lines := strings.Split(content, "\n")
 	var newLineNum int
 	var currentFile string
-
 	// Use d.filePath if set (single file view)
 	if d.filePath != "" {
 		currentFile = d.filePath
 	}
-
 	for _, line := range lines {
 		var styledLine string
 		var loc lineLocation
-
 		// Track current file from diff headers
 		if strings.HasPrefix(line, "diff --git") {
 			// Extract file path: "diff --git a/path b/path" -> "path"
@@ -457,10 +404,8 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 			styledLine = d.styles.DiffContext.Render(line)
 			loc = lineLocation{filePath: currentFile, lineNum: newLineNum}
 		}
-
 		styled = append(styled, styledLine)
 		lineMap = append(lineMap, loc)
-
 		// Add comments for this line (only once per line)
 		if newLineNum > 0 && currentFile != "" {
 			if fileComments, ok := commentsByFile[currentFile]; ok {
@@ -478,11 +423,9 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 			}
 		}
 	}
-
 	d.lineMap = lineMap
 	return strings.Join(styled, "\n")
 }
-
 // renderComment formats a PR comment for display in the diff
 func (d *DiffView) renderComment(c github.LineComment) []string {
 	var lines []string
@@ -490,11 +433,9 @@ func (d *DiffView) renderComment(c github.LineComment) []string {
 	if width < 20 {
 		width = 60
 	}
-
 	// Author header
 	header := fmt.Sprintf("   ┌─ %s", c.Author)
 	lines = append(lines, d.styles.DiffHeader.Render(header))
-
 	// Comment body - wrap long lines
 	bodyLines := strings.Split(c.Body, "\n")
 	for _, bl := range bodyLines {
@@ -509,13 +450,10 @@ func (d *DiffView) renderComment(c github.LineComment) []string {
 			lines = append(lines, d.styles.Muted.Render("   │ "+w))
 		}
 	}
-
 	// Footer
 	lines = append(lines, d.styles.DiffHeader.Render("   └─"))
-
 	return lines
 }
-
 // wrapText wraps text to the specified width
 func wrapText(text string, width int) []string {
 	if width <= 0 {
@@ -526,7 +464,6 @@ func wrapText(text string, width int) []string {
 	if len(words) == 0 {
 		return []string{}
 	}
-
 	current := words[0]
 	for _, word := range words[1:] {
 		if len(current)+1+len(word) <= width {
@@ -541,7 +478,6 @@ func wrapText(text string, width int) []string {
 	}
 	return lines
 }
-
 // diffLine represents a line in the side-by-side view
 type diffLine struct {
 	leftNum   int
@@ -551,16 +487,13 @@ type diffLine struct {
 	rightText string
 	rightType lineType
 }
-
 type lineType int
-
 const (
 	lineContext lineType = iota
 	lineAdded
 	lineRemoved
 	lineEmpty
 )
-
 func (d *DiffView) renderSideBySide(content string) string {
 	// Minimum width for side-by-side view
 	minWidth := 60
@@ -568,7 +501,6 @@ func (d *DiffView) renderSideBySide(content string) string {
 		// Fall back to unified view if too narrow
 		return d.styleUnifiedDiff(content)
 	}
-
 	// Build comments map by line number (per file for folder view)
 	commentsByFile := make(map[string]map[int][]github.LineComment)
 	if d.pr != nil {
@@ -579,7 +511,6 @@ func (d *DiffView) renderSideBySide(content string) string {
 			}
 		}
 	}
-
 	lines := strings.Split(content, "\n")
 	var result []string
 	var lineMap []lineLocation
@@ -587,23 +518,18 @@ func (d *DiffView) renderSideBySide(content string) string {
 	if d.filePath != "" {
 		currentFile = d.filePath
 	}
-
 	// Calculate pane width (half of available space minus separator)
 	paneWidth := (d.viewport.Width - 3) / 2 // 3 for " │ " separator
 	if paneWidth < 20 {
 		paneWidth = 20
 	}
-
 	// Number column width
 	numWidth := 4
-
 	// Process the diff
 	var leftNum, rightNum int
 	var i int
-
 	for i < len(lines) {
 		line := lines[i]
-
 		// Track file from diff header
 		if strings.HasPrefix(line, "diff --git") {
 			parts := strings.Split(line, " b/")
@@ -613,21 +539,18 @@ func (d *DiffView) renderSideBySide(content string) string {
 			i++
 			continue
 		}
-
 		// Header lines (index, ---, +++)
 		if strings.HasPrefix(line, "index ") ||
 			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
 			i++
 			continue
 		}
-
 		// Hunk header - parse but don't display
 		if strings.HasPrefix(line, "@@") {
 			leftNum, rightNum = parseHunkHeader(line)
 			i++
 			continue
 		}
-
 		// Context line
 		if len(line) == 0 || (len(line) > 0 && line[0] != '+' && line[0] != '-') {
 			text := line
@@ -658,11 +581,9 @@ func (d *DiffView) renderSideBySide(content string) string {
 			i++
 			continue
 		}
-
 		// Collect consecutive - and + lines for pairing
 		var removals []string
 		var additions []string
-
 		for i < len(lines) && len(lines[i]) > 0 && lines[i][0] == '-' && !strings.HasPrefix(lines[i], "---") {
 			removals = append(removals, lines[i][1:])
 			i++
@@ -671,20 +592,17 @@ func (d *DiffView) renderSideBySide(content string) string {
 			additions = append(additions, lines[i][1:])
 			i++
 		}
-
 		// Pair up removals and additions
 		maxLen := max(len(removals), len(additions))
 		for j := 0; j < maxLen; j++ {
 			var left, right string
 			var currentRightNum int
-
 			if j < len(removals) {
 				left = d.formatSideLine(leftNum, removals[j], lineRemoved, numWidth, paneWidth)
 				leftNum++
 			} else {
 				left = d.formatSideLine(0, "", lineEmpty, numWidth, paneWidth)
 			}
-
 			if j < len(additions) {
 				currentRightNum = rightNum
 				right = d.formatSideLine(rightNum, additions[j], lineAdded, numWidth, paneWidth)
@@ -692,10 +610,8 @@ func (d *DiffView) renderSideBySide(content string) string {
 			} else {
 				right = d.formatSideLine(0, "", lineEmpty, numWidth, paneWidth)
 			}
-
 			result = append(result, left+d.styles.Muted.Render(" │ ")+right)
 			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: max(currentRightNum, leftNum-1)})
-
 			// Add comments for the new line
 			if currentRightNum > 0 && currentFile != "" {
 				if fileComments, ok := commentsByFile[currentFile]; ok {
@@ -713,27 +629,21 @@ func (d *DiffView) renderSideBySide(content string) string {
 			}
 		}
 	}
-
 	d.lineMap = lineMap
 	return strings.Join(result, "\n")
 }
-
 func (d *DiffView) formatSideLine(num int, text string, lt lineType, numWidth, paneWidth int) string {
 	// Format: "1234 text..."
 	textWidth := paneWidth - numWidth - 1 // -1 for space after number
-
 	var numStr string
 	if num > 0 {
 		numStr = fmt.Sprintf("%*d", numWidth, num)
 	} else {
 		numStr = strings.Repeat(" ", numWidth)
 	}
-
 	// Truncate or pad text
 	displayText := truncateOrPad(text, textWidth)
-
 	fullLine := numStr + " " + displayText
-
 	switch lt {
 	case lineAdded:
 		return d.styles.DiffAdded.Render(fullLine)
@@ -745,12 +655,10 @@ func (d *DiffView) formatSideLine(num int, text string, lt lineType, numWidth, p
 		return d.styles.DiffContext.Render(fullLine)
 	}
 }
-
 func parseHunkHeader(line string) (oldStart, newStart int) {
 	// Parse @@ -10,6 +10,8 @@ format
 	// Returns starting line numbers for old and new
 	oldStart, newStart = 1, 1
-
 	parts := strings.Split(line, " ")
 	for _, p := range parts {
 		if strings.HasPrefix(p, "-") && len(p) > 1 {
@@ -762,15 +670,12 @@ func parseHunkHeader(line string) (oldStart, newStart int) {
 	}
 	return oldStart, newStart
 }
-
 func truncateOrPad(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-
 	// Handle tabs by converting to spaces
 	s = strings.ReplaceAll(s, "\t", "    ")
-
 	runeCount := len([]rune(s))
 	if runeCount > width {
 		runes := []rune(s)

@@ -12,7 +12,6 @@ import (
 	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
-	"github.com/kmacinski/blocks/internal/keys"
 )
 
 // treeNode represents a node in the file tree
@@ -384,35 +383,35 @@ func (f *FileList) Update(msg tea.Msg) (Window, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, keys.DefaultKeyMap.Down):
+		case key.Matches(msg, config.DefaultKeyMap.Down):
 			if f.cursor < len(f.flatEntries)-1 {
 				f.cursor++
 				f.ensureVisible()
 				return f, f.selectCurrent()
 			}
-		case key.Matches(msg, keys.DefaultKeyMap.Up):
+		case key.Matches(msg, config.DefaultKeyMap.Up):
 			if f.cursor > 0 {
 				f.cursor--
 				f.ensureVisible()
 				return f, f.selectCurrent()
 			}
-		case key.Matches(msg, keys.DefaultKeyMap.FastDown):
+		case key.Matches(msg, config.DefaultKeyMap.FastDown):
 			f.cursor = min(f.cursor+5, len(f.flatEntries)-1)
 			f.ensureVisible()
 			return f, f.selectCurrent()
-		case key.Matches(msg, keys.DefaultKeyMap.FastUp):
+		case key.Matches(msg, config.DefaultKeyMap.FastUp):
 			f.cursor = max(f.cursor-5, 0)
 			f.ensureVisible()
 			return f, f.selectCurrent()
-		case key.Matches(msg, keys.DefaultKeyMap.GotoTop):
+		case key.Matches(msg, config.DefaultKeyMap.GotoTop):
 			f.cursor = 0
 			f.offset = 0
 			return f, f.selectCurrent()
-		case key.Matches(msg, keys.DefaultKeyMap.GotoBot):
+		case key.Matches(msg, config.DefaultKeyMap.GotoBot):
 			f.cursor = max(0, len(f.flatEntries)-1)
 			f.ensureVisible()
 			return f, f.selectCurrent()
-		case key.Matches(msg, keys.DefaultKeyMap.Left):
+		case key.Matches(msg, config.DefaultKeyMap.Left):
 			// Collapse folder (h)
 			if f.cursor >= 0 && f.cursor < len(f.flatEntries) {
 				entry := f.flatEntries[f.cursor]
@@ -423,7 +422,7 @@ func (f *FileList) Update(msg tea.Msg) (Window, tea.Cmd) {
 					return f, f.selectCurrent()
 				}
 			}
-		case key.Matches(msg, keys.DefaultKeyMap.Right):
+		case key.Matches(msg, config.DefaultKeyMap.Right):
 			// Expand folder (l)
 			if f.cursor >= 0 && f.cursor < len(f.flatEntries) {
 				entry := f.flatEntries[f.cursor]

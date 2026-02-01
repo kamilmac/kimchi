@@ -68,33 +68,20 @@ func (h *Help) View(width, height int) string {
 	}
 	lines = append(lines, "")
 
-	// Diff modes section
-	lines = append(lines, h.styles.Bold.Render("Diff Modes"))
-	lines = append(lines, h.styles.Muted.Render("What changes to compare:"))
-	diffBindings := []struct {
+	// Modes section
+	lines = append(lines, h.styles.Bold.Render("Modes"))
+	lines = append(lines, h.styles.Muted.Render("Press m to cycle, or use number keys:"))
+	modeBindings := []struct {
 		key  string
 		desc string
 	}{
-		{"1", "Working - uncommitted only"},
-		{"2", "Branch - all vs base branch"},
+		{"1", "changed:working (uncommitted)"},
+		{"2", "changed:branch (vs base)"},
+		{"3", "browse (all files)"},
+		{"4", "docs (markdown only)"},
+		{"m", "cycle through modes"},
 	}
-	for _, b := range diffBindings {
-		lines = append(lines, h.formatBinding(b.key, b.desc))
-	}
-	lines = append(lines, "")
-
-	// File view modes section
-	lines = append(lines, h.styles.Bold.Render("File Views"))
-	lines = append(lines, h.styles.Muted.Render("Which files to show:"))
-	viewBindings := []struct {
-		key  string
-		desc string
-	}{
-		{"c", "Changed files only"},
-		{"a", "All files in repo"},
-		{"d", "Docs (*.md) only"},
-	}
-	for _, b := range viewBindings {
+	for _, b := range modeBindings {
 		lines = append(lines, h.formatBinding(b.key, b.desc))
 	}
 	lines = append(lines, "")
@@ -105,7 +92,6 @@ func (h *Help) View(width, height int) string {
 		key  string
 		desc string
 	}{
-		{"s", "Toggle side-by-side diff"},
 		{"y", "Copy path (with line number)"},
 		{"o", "Open in $EDITOR"},
 		{"r", "Refresh"},

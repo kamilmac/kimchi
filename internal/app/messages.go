@@ -95,3 +95,8 @@ type FileContentLoadedMsg struct {
 	Content string
 	Path    string
 }
+
+// CommitsLoadedMsg is sent when commits are loaded
+type CommitsLoadedMsg struct {
+	Commits []git.Commit
+}
