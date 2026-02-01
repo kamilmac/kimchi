@@ -279,14 +279,8 @@ fn parse_diff(content: &str) -> Vec<DiffLine> {
                 left_num = l;
                 right_num = r;
             }
-            lines.push(DiffLine {
-                left_text: Some(line.to_string()),
-                right_text: None,
-                left_num: None,
-                right_num: None,
-                line_type: LineType::Header,
-                is_header: true,
-            });
+            // Skip rendering hunk headers (@@ ... @@)
+            continue;
         } else if line.starts_with("diff --git") || line.starts_with("index ")
             || line.starts_with("---") || line.starts_with("+++")
             || line.starts_with("new file") || line.starts_with("deleted file")
