@@ -160,6 +160,10 @@ impl App {
                 .map(|k| (k.clone(), true))
                 .collect();
             self.file_list_state.set_comments(comments);
+
+            // Update diff view with PR for inline comments
+            self.diff_view_state.set_pr(Some(pr.clone()));
+
             self.pr = Some(pr);
 
             // Update preview if showing commit

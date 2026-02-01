@@ -44,6 +44,8 @@ pub struct DiffViewState {
     pub lines: Vec<DiffLine>,
     pub cursor: usize,
     pub offset: usize,
+    pub pr: Option<PrInfo>,
+    current_file: String,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ pub enum LineType {
     Removed,
     Header,
     Info,
+    Comment,
 }
 
 impl DiffViewState {
@@ -71,14 +74,26 @@ impl DiffViewState {
     }
 
     pub fn set_content(&mut self, content: PreviewContent) {
+        // Store current file path for comment lookup
+        self.current_file = match &content {
+            PreviewContent::FileDiff { path, .. } => path.clone(),
+            PreviewContent::FileContent { path, .. } => path.clone(),
+            _ => String::new(),
+        };
         self.content = content;
         self.cursor = 0;
         self.offset = 0;
         self.parse_content();
     }
 
+    pub fn set_pr(&mut self, pr: Option<PrInfo>) {
+        self.pr = pr;
+        // Re-parse to inject comments
+        self.parse_content();
+    }
+
     fn parse_content(&mut self) {
-        self.lines = match &self.content {
+        let base_lines = match &self.content {
             PreviewContent::Empty => vec![],
             PreviewContent::FileDiff { content, .. } | PreviewContent::FolderDiff { content, .. } => {
                 if is_binary(content) {
@@ -112,6 +127,62 @@ impl DiffViewState {
                 parse_commit_summary(commit, pr.as_ref())
             }
         };
+
+        // Inject inline comments if we have PR info
+        self.lines = self.inject_comments(base_lines);
+    }
+
+    fn inject_comments(&self, lines: Vec<DiffLine>) -> Vec<DiffLine> {
+        let pr = match &self.pr {
+            Some(pr) => pr,
+            None => return lines,
+        };
+
+        let comments = match pr.file_comments.get(&self.current_file) {
+            Some(c) => c,
+            None => return lines,
+        };
+
+        if comments.is_empty() {
+            return lines;
+        }
+
+        let mut result = Vec::with_capacity(lines.len() + comments.len() * 2);
+
+        for line in lines {
+            let line_num = line.right_num.or(line.left_num);
+            result.push(line);
+
+            // Check if there are comments for this line
+            if let Some(num) = line_num {
+                for comment in comments {
+                    if comment.line == Some(num as u32) {
+                        // Add comment header
+                        result.push(DiffLine {
+                            left_text: Some(format!("💬 {}", comment.author)),
+                            right_text: None,
+                            left_num: None,
+                            right_num: None,
+                            line_type: LineType::Comment,
+                            is_header: true,
+                        });
+                        // Add comment body lines
+                        for body_line in comment.body.lines() {
+                            result.push(DiffLine {
+                                left_text: Some(format!("   {}", body_line)),
+                                right_text: None,
+                                left_num: None,
+                                right_num: None,
+                                line_type: LineType::Comment,
+                                is_header: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     pub fn title(&self) -> String {
@@ -460,12 +531,13 @@ impl<'a> StatefulWidget for DiffView<'a> {
 fn render_diff_line(diff_line: &DiffLine, cursor: bool, colors: &Colors, pane_width: usize) -> Line<'static> {
     let mut spans = vec![];
 
-    // For headers, render full width
+    // For headers and comments, render full width
     if diff_line.is_header {
         let text = diff_line.left_text.as_deref().unwrap_or("");
         let style = match diff_line.line_type {
             LineType::Header => colors.style_header(),
             LineType::Info => colors.style_muted(),
+            LineType::Comment => ratatui::style::Style::default().fg(colors.comment),
             _ => ratatui::style::Style::default().fg(colors.text),
         };
         let content_style = if cursor {

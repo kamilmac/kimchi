@@ -35,6 +35,7 @@ pub struct Colors {
     pub cursor: Color,
     pub status_bar: Color,
     pub status_bar_text: Color,
+    pub comment: Color,
 }
 
 impl Default for Colors {
@@ -55,6 +56,7 @@ impl Default for Colors {
             cursor: Color::Rgb(245, 224, 220),     // Rosewater
             status_bar: Color::Rgb(49, 50, 68),    // Surface0
             status_bar_text: Color::Rgb(205, 214, 244), // Text
+            comment: Color::Rgb(249, 226, 175),   // Yellow for PR comments
         }
     }
 }
