@@ -67,19 +67,19 @@ func New(gitClient git.Client) *App {
 
 	// Create window registry
 	windows := map[string]window.Window{
-		"filelist": fileList,
-		"diffview": diffView,
-		"help":     help,
+		WindowFileList: fileList,
+		WindowDiffView: diffView,
+		WindowHelp:     help,
 	}
 
 	// Default assignments for different layouts
 	assignments := map[string]string{
 		// TwoColumn layout
-		"left":  "filelist",
-		"right": "diffview",
+		"left":  WindowFileList,
+		"right": WindowDiffView,
 		// Stacked layout
-		"top":    "filelist",
-		"bottom": "diffview",
+		"top":    WindowFileList,
+		"bottom": WindowDiffView,
 	}
 
 	app := &App{
@@ -93,7 +93,7 @@ func New(gitClient git.Client) *App {
 		help:           help,
 		windows:        windows,
 		assignments:    assignments,
-		prPollInterval: 60 * time.Second,
+		prPollInterval: DefaultPRPollInterval,
 	}
 
 	// Set file selection callback
@@ -176,7 +176,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 
 		case key.Matches(msg, keys.DefaultKeyMap.Help):
-			a.state.ToggleModal("help")
+			a.state.ToggleModal(ModalHelp)
 			return a, nil
 
 		case key.Matches(msg, keys.DefaultKeyMap.Refresh):
@@ -225,7 +225,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.DefaultKeyMap.Yank):
 			var toCopy string
-			if a.state.FocusedWindow == "diffview" {
+			if a.state.FocusedWindow == WindowDiffView {
 				filePath, lineNum := a.diffView.GetSelectedLocation()
 				if filePath != "" && lineNum > 0 {
 					toCopy = fmt.Sprintf("%s:%d", filePath, lineNum)
@@ -244,7 +244,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.DefaultKeyMap.OpenEditor):
 			// Get file and line from diffview if focused there
-			if a.state.FocusedWindow == "diffview" {
+			if a.state.FocusedWindow == WindowDiffView {
 				filePath, lineNum := a.diffView.GetSelectedLocation()
 				if filePath != "" {
 					return a, a.openInEditorAtLine(filePath, lineNum)
@@ -351,11 +351,11 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch a.state.FocusedWindow {
-	case "filelist":
+	case WindowFileList:
 		var w window.Window
 		w, cmd = a.fileList.Update(msg)
 		a.fileList = w.(*window.FileList)
-	case "diffview":
+	case WindowDiffView:
 		var w window.Window
 		w, cmd = a.diffView.Update(msg)
 		a.diffView = w.(*window.DiffView)
@@ -365,7 +365,7 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cycleFocus(reverse bool) {
-	windowOrder := []string{"filelist", "diffview"}
+	windowOrder := []string{WindowFileList, WindowDiffView}
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
 }
@@ -379,8 +379,8 @@ func (a *App) focusPrev() {
 }
 
 func (a *App) updateFocus() {
-	a.fileList.SetFocus(a.state.FocusedWindow == "filelist")
-	a.diffView.SetFocus(a.state.FocusedWindow == "diffview")
+	a.fileList.SetFocus(a.state.FocusedWindow == WindowFileList)
+	a.diffView.SetFocus(a.state.FocusedWindow == WindowDiffView)
 }
 
 // View renders the application
@@ -401,7 +401,7 @@ func (a *App) View() string {
 	mainView := a.layout.Render(a.windows, a.assignments, statusBar)
 
 	// Render modal overlay if active
-	if a.state.ActiveModal == "help" {
+	if a.state.ActiveModal == ModalHelp {
 		mainView = a.renderWithModal(mainView, a.help)
 	}
 

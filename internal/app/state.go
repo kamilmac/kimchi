@@ -40,7 +40,7 @@ type State struct {
 func NewState() *State {
 	return &State{
 		DiffMode:      git.DiffModeBranch,
-		FocusedWindow: "filelist",
+		FocusedWindow: WindowFileList,
 	}
 }
 

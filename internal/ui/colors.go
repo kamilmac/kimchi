@@ -6,6 +6,8 @@ import "github.com/charmbracelet/lipgloss"
 type Colors struct {
 	Added           lipgloss.Color
 	Removed         lipgloss.Color
+	Modified        lipgloss.Color
+	Renamed         lipgloss.Color
 	Context         lipgloss.Color
 	Header          lipgloss.Color
 	BorderFocused   lipgloss.Color
@@ -14,12 +16,15 @@ type Colors struct {
 	StatusBarText   lipgloss.Color
 	Muted           lipgloss.Color
 	Text            lipgloss.Color
+	ModalBackground lipgloss.Color
 }
 
 // DefaultColors returns the default color palette
 var DefaultColors = Colors{
 	Added:           lipgloss.Color("#a6e3a1"),
 	Removed:         lipgloss.Color("#f38ba8"),
+	Modified:        lipgloss.Color("#fab387"),
+	Renamed:         lipgloss.Color("#cba6f7"),
 	Context:         lipgloss.Color("#cdd6f4"),
 	Header:          lipgloss.Color("#89b4fa"),
 	BorderFocused:   lipgloss.Color("#89b4fa"),
@@ -28,4 +33,5 @@ var DefaultColors = Colors{
 	StatusBarText:   lipgloss.Color("#cdd6f4"),
 	Muted:           lipgloss.Color("#6c7086"),
 	Text:            lipgloss.Color("#cdd6f4"),
+	ModalBackground: lipgloss.Color("#1e1e2e"),
 }

@@ -77,7 +77,7 @@ func NewStyles(c Colors) Styles {
 
 		// Status indicators
 		StatusModified: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#fab387")),
+			Foreground(c.Modified),
 		StatusAdded: lipgloss.NewStyle().
 			Foreground(c.Added),
 		StatusDeleted: lipgloss.NewStyle().
@@ -85,7 +85,7 @@ func NewStyles(c Colors) Styles {
 		StatusUntracked: lipgloss.NewStyle().
 			Foreground(c.Muted),
 		StatusRenamed: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cba6f7")),
+			Foreground(c.Renamed),
 
 		// Status bar
 		StatusBar: lipgloss.NewStyle().
@@ -100,7 +100,7 @@ func NewStyles(c Colors) Styles {
 		Modal: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(c.BorderFocused).
-			Background(lipgloss.Color("#1e1e2e")).
+			Background(c.ModalBackground).
 			Padding(1, 2),
 		ModalTitle: lipgloss.NewStyle().
 			Bold(true).
