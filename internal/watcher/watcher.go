@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/kmacinski/blocks/internal/config"
 )
 
 // GitWatcher watches for git repository changes
@@ -82,8 +83,12 @@ func (g *GitWatcher) watchDirRecursive(dir, gitDir string) {
 		if info.IsDir() && len(info.Name()) > 0 && info.Name()[0] == '.' {
 			return filepath.SkipDir
 		}
-		if info.IsDir() && (info.Name() == "node_modules" || info.Name() == "vendor" || info.Name() == "__pycache__") {
-			return filepath.SkipDir
+		if info.IsDir() {
+			for _, excluded := range config.WatcherExcludeDirs {
+				if info.Name() == excluded {
+					return filepath.SkipDir
+				}
+			}
 		}
 
 		// Watch directories

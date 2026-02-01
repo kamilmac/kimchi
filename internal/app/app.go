@@ -458,8 +458,8 @@ func (a *App) renderStatusBar() string {
 
 func (a *App) renderWithModal(background string, modal window.Window) string {
 	// Calculate modal size - let content determine height
-	modalWidth := min(50, a.width-4)
-	modalHeight := min(26, a.height-4)
+	modalWidth := min(config.ModalMaxWidth, a.width-config.ModalPadding)
+	modalHeight := min(config.ModalMaxHeight, a.height-config.ModalPadding)
 
 	// Render modal content
 	modalContent := modal.View(modalWidth, modalHeight)

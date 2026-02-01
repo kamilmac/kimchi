@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/window"
 )
 
@@ -36,7 +37,7 @@ var (
 	TwoColumn = Layout{
 		Name:      "two-column",
 		Direction: Horizontal,
-		Ratios:    []int{30, 70},
+		Ratios:    []int{config.LayoutLeftRatio, config.LayoutRightRatio},
 		Slots: []Slot{
 			{Name: "left"},
 			{Name: "right"},
@@ -46,7 +47,7 @@ var (
 	Stacked = Layout{
 		Name:      "stacked",
 		Direction: Vertical,
-		Ratios:    []int{30, 70},
+		Ratios:    []int{config.LayoutLeftRatio, config.LayoutRightRatio},
 		Slots: []Slot{
 			{Name: "top"},
 			{Name: "bottom"},
@@ -68,7 +69,7 @@ type ResponsiveConfig struct {
 // DefaultResponsive is the default responsive configuration
 var DefaultResponsive = ResponsiveConfig{
 	Breakpoints: []Breakpoint{
-		{MinWidth: 80, Layout: TwoColumn},
+		{MinWidth: config.LayoutBreakpoint, Layout: TwoColumn},
 		{MinWidth: 0, Layout: Stacked},
 	},
 }

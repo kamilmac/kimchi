@@ -25,8 +25,87 @@ const (
 // =============================================================================
 
 const (
-	PRPollInterval     = 60 * time.Second
+	PRPollInterval      = 60 * time.Second
 	FileWatcherDebounce = 500 * time.Millisecond
+)
+
+// =============================================================================
+// Layout Configuration
+// =============================================================================
+
+const (
+	// Layout ratios (percentage)
+	LayoutLeftRatio  = 30
+	LayoutRightRatio = 70
+
+	// Responsive breakpoint
+	LayoutBreakpoint = 80 // columns - below this, use stacked layout
+)
+
+// =============================================================================
+// Diff View Configuration
+// =============================================================================
+
+const (
+	// Side-by-side view
+	DiffSideBySideMinWidth = 60 // minimum terminal width for side-by-side
+	DiffPaneMinWidth       = 20 // minimum width per pane
+	DiffLineNumWidth       = 4  // width for line numbers
+
+	// Content limits
+	DiffMaxLines  = 10000 // max lines before truncation
+	DiffTabWidth  = 4     // spaces per tab
+
+	// Comment display
+	DiffCommentMargin   = 6  // margin for inline comments
+	DiffCommentMinWidth = 60 // fallback width for comments
+)
+
+// =============================================================================
+// Modal Configuration
+// =============================================================================
+
+const (
+	ModalMaxWidth  = 50
+	ModalMaxHeight = 26
+	ModalPadding   = 4 // border + padding on each side
+)
+
+// =============================================================================
+// File Tree Configuration
+// =============================================================================
+
+const (
+	TreeIndentSize = 2 // spaces per depth level
+)
+
+// Tree display characters
+var (
+	TreeDirPrefix  = "▼ "
+	TreeFilePrefix = "  "
+	TreeCursor     = ">"
+	TreeNoCursor   = " "
+	TreeTruncation = "..."
+)
+
+// =============================================================================
+// Git Configuration
+// =============================================================================
+
+var (
+	// Default branch names to check (in order of preference)
+	GitDefaultBranches = []string{"main", "master"}
+
+	// Remote branch names to check
+	GitRemoteBranches = []string{"origin/main", "origin/master"}
+
+	// Directories to exclude from file watching
+	WatcherExcludeDirs = []string{"node_modules", "vendor", "__pycache__", ".git"}
+)
+
+// Git limits
+const (
+	GitRecentCommits = 20 // number of recent commits to show
 )
 
 // =============================================================================
