@@ -1,9 +1,12 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/kmacinski/blocks/internal/config"
 )
 
 // GitClient implements the Client interface using git CLI
@@ -49,14 +52,14 @@ func (c *GitClient) BaseBranch() (string, error) {
 	}
 
 	// Try common names
-	for _, name := range []string{"main", "master"} {
+	for _, name := range config.GitDefaultBranches {
 		if c.branchExists(name) {
 			return name, nil
 		}
 	}
 
 	// Try remote branches
-	for _, name := range []string{"origin/main", "origin/master"} {
+	for _, name := range config.GitRemoteBranches {
 		if c.branchExists(name) {
 			return name, nil
 		}
@@ -281,9 +284,9 @@ func (c *GitClient) Diff(path string, mode DiffMode) (string, error) {
 	// Truncate if too large
 	result := string(out)
 	lines := strings.Split(result, "\n")
-	if len(lines) > 10000 {
-		lines = lines[:10000]
-		lines = append(lines, "", "[truncated - showing first 10,000 lines]")
+	if len(lines) > config.DiffMaxLines {
+		lines = lines[:config.DiffMaxLines]
+		lines = append(lines, "", fmt.Sprintf("[truncated - showing first %d lines]", config.DiffMaxLines))
 		result = strings.Join(lines, "\n")
 	}
 
@@ -301,9 +304,9 @@ func (c *GitClient) ReadFile(path string) (string, error) {
 	// Truncate if too large
 	result := string(out)
 	lines := strings.Split(result, "\n")
-	if len(lines) > 10000 {
-		lines = lines[:10000]
-		lines = append(lines, "", "[truncated - showing first 10,000 lines]")
+	if len(lines) > config.DiffMaxLines {
+		lines = lines[:config.DiffMaxLines]
+		lines = append(lines, "", fmt.Sprintf("[truncated - showing first %d lines]", config.DiffMaxLines))
 		result = strings.Join(lines, "\n")
 	}
 

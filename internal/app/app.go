@@ -11,11 +11,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
-	"github.com/kmacinski/blocks/internal/keys"
 	"github.com/kmacinski/blocks/internal/layout"
-	"github.com/kmacinski/blocks/internal/ui"
 	"github.com/kmacinski/blocks/internal/watcher"
 	"github.com/kmacinski/blocks/internal/window"
 )
@@ -24,14 +23,16 @@ import (
 type App struct {
 	state  *State
 	git    git.Client
-	gh     *github.Client
+	gh     github.Client
 	layout *layout.Manager
-	styles ui.Styles
+	styles config.Styles
 
 	// Windows
-	fileList *window.FileList
-	diffView *window.DiffView
-	help     *window.Help
+	fileList   *window.FileList
+	commitList *window.CommitList
+	diffView   *window.DiffView
+	fileView   *window.FileView
+	help       *window.Help
 
 	// Window registry
 	windows     map[string]window.Window
@@ -47,19 +48,18 @@ type App struct {
 	// File watcher
 	watcher *watcher.GitWatcher
 	program *tea.Program
-
-	// PR polling
-	prPollInterval time.Duration
 }
 
 // New creates a new application
 func New(gitClient git.Client) *App {
-	styles := ui.DefaultStyles
+	styles := config.DefaultStyles
 	state := NewState()
 
 	// Create windows
 	fileList := window.NewFileList(styles)
+	commitList := window.NewCommitList(styles)
 	diffView := window.NewDiffView(styles)
+	fileView := window.NewFileView(styles)
 	help := window.NewHelp(styles)
 
 	// Set initial focus
@@ -67,33 +67,38 @@ func New(gitClient git.Client) *App {
 
 	// Create window registry
 	windows := map[string]window.Window{
-		"filelist": fileList,
-		"diffview": diffView,
-		"help":     help,
+		config.WindowFileList:   fileList,
+		config.WindowCommitList: commitList,
+		config.WindowDiffView:   diffView,
+		config.WindowFileView:   fileView,
+		config.WindowHelp:       help,
 	}
 
 	// Default assignments for different layouts
 	assignments := map[string]string{
-		// TwoColumn layout
-		"left":  "filelist",
-		"right": "diffview",
+		// TwoColumn layout (nested left)
+		"left-top":    config.WindowFileList,
+		"left-bottom": config.WindowCommitList,
+		"right":       config.WindowDiffView,
 		// Stacked layout
-		"top":    "filelist",
-		"bottom": "diffview",
+		"top":    config.WindowFileList,
+		"middle": config.WindowCommitList,
+		"bottom": config.WindowDiffView,
 	}
 
 	app := &App{
-		state:          state,
-		git:            gitClient,
-		gh:             github.NewClient(),
-		layout:         layout.NewManager(layout.DefaultResponsive),
-		styles:         styles,
-		fileList:       fileList,
-		diffView:       diffView,
-		help:           help,
-		windows:        windows,
-		assignments:    assignments,
-		prPollInterval: 60 * time.Second,
+		state:       state,
+		git:         gitClient,
+		gh:          github.NewClient(),
+		layout:      layout.NewManager(layout.DefaultResponsive),
+		styles:      styles,
+		fileList:    fileList,
+		commitList:  commitList,
+		diffView:    diffView,
+		fileView:    fileView,
+		help:        help,
+		windows:     windows,
+		assignments: assignments,
 	}
 
 	// Set file selection callback
@@ -119,7 +124,7 @@ func (a *App) SetProgram(p *tea.Program) {
 	a.program = p
 
 	// Start file watcher with 500ms debounce
-	w, err := watcher.New(500*time.Millisecond, func() {
+	w, err := watcher.New(config.FileWatcherDebounce, func() {
 		if a.program != nil {
 			a.program.Send(GitChangedMsg{})
 		}
@@ -142,13 +147,15 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		a.loadBranchInfo(),
 		a.loadFiles(),
+		a.loadCommits(),
+		a.loadDiffStats(),
 		a.loadPR(),
 		a.schedulePRPoll(),
 	)
 }
 
 func (a *App) schedulePRPoll() tea.Cmd {
-	return tea.Tick(a.prPollInterval, func(t time.Time) tea.Msg {
+	return tea.Tick(config.PRPollInterval, func(t time.Time) tea.Msg {
 		return PRPollTickMsg{}
 	})
 }
@@ -172,61 +179,51 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Global keybindings
 		switch {
-		case key.Matches(msg, keys.DefaultKeyMap.Quit):
+		case key.Matches(msg, config.DefaultKeyMap.Quit):
 			return a, tea.Quit
 
-		case key.Matches(msg, keys.DefaultKeyMap.Help):
-			a.state.ToggleModal("help")
+		case key.Matches(msg, config.DefaultKeyMap.Help):
+			a.state.ToggleModal(config.ModalHelp)
 			return a, nil
 
-		case key.Matches(msg, keys.DefaultKeyMap.Refresh):
+		case key.Matches(msg, config.DefaultKeyMap.Refresh):
 			return a, tea.Batch(a.loadFiles(), a.loadDiffStats())
 
-		case key.Matches(msg, keys.DefaultKeyMap.ModeWorking):
-			a.state.SetDiffMode(git.DiffModeWorking)
-			return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadDiffStats())
+		case key.Matches(msg, config.DefaultKeyMap.CycleMode):
+			return a.cycleMode()
 
-		case key.Matches(msg, keys.DefaultKeyMap.ModeBranch):
-			a.state.SetDiffMode(git.DiffModeBranch)
-			return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadDiffStats())
+		case key.Matches(msg, config.DefaultKeyMap.Mode1):
+			return a.setMode(git.FileViewChanged, git.DiffModeWorking)
 
-		case key.Matches(msg, keys.DefaultKeyMap.ViewChanged):
-			a.state.SetFileViewMode(git.FileViewChanged)
-			return a, a.loadFiles()
+		case key.Matches(msg, config.DefaultKeyMap.Mode2):
+			return a.setMode(git.FileViewChanged, git.DiffModeBranch)
 
-		case key.Matches(msg, keys.DefaultKeyMap.ViewAllFiles):
-			a.state.SetFileViewMode(git.FileViewAll)
-			return a, a.loadFiles()
+		case key.Matches(msg, config.DefaultKeyMap.Mode3):
+			return a.setMode(git.FileViewAll, git.DiffModeWorking)
 
-		case key.Matches(msg, keys.DefaultKeyMap.ViewDocs):
-			a.state.SetFileViewMode(git.FileViewDocs)
-			return a, a.loadFiles()
+		case key.Matches(msg, config.DefaultKeyMap.Mode4):
+			return a.setMode(git.FileViewDocs, git.DiffModeWorking)
 
-		case key.Matches(msg, keys.DefaultKeyMap.ToggleDiffStyle):
-			a.state.ToggleDiffStyle()
-			a.diffView.SetStyle(a.state.DiffStyle)
-			return a, nil
-
-		case key.Matches(msg, keys.DefaultKeyMap.Tab):
+		case key.Matches(msg, config.DefaultKeyMap.Tab):
 			a.cycleFocus(false)
 			return a, nil
 
-		case key.Matches(msg, keys.DefaultKeyMap.ShiftTab):
+		case key.Matches(msg, config.DefaultKeyMap.ShiftTab):
 			a.cycleFocus(true)
 			return a, nil
 
-		case key.Matches(msg, keys.DefaultKeyMap.Left):
-			a.focusPrev()
-			return a, nil
-
-		case key.Matches(msg, keys.DefaultKeyMap.Right):
-			a.focusNext()
-			return a, nil
-
-		case key.Matches(msg, keys.DefaultKeyMap.Yank):
+		case key.Matches(msg, config.DefaultKeyMap.Yank):
 			var toCopy string
-			if a.state.FocusedWindow == "diffview" {
+			if a.state.FocusedWindow == config.WindowDiffView {
 				filePath, lineNum := a.diffView.GetSelectedLocation()
+				if filePath != "" && lineNum > 0 {
+					toCopy = fmt.Sprintf("%s:%d", filePath, lineNum)
+				} else if filePath != "" {
+					toCopy = filePath
+				}
+			} else if a.state.FocusedWindow == config.WindowFileView {
+				filePath := a.fileView.GetFilePath()
+				lineNum := a.fileView.GetSelectedLine()
 				if filePath != "" && lineNum > 0 {
 					toCopy = fmt.Sprintf("%s:%d", filePath, lineNum)
 				} else if filePath != "" {
@@ -242,10 +239,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
-		case key.Matches(msg, keys.DefaultKeyMap.OpenEditor):
-			// Get file and line from diffview if focused there
-			if a.state.FocusedWindow == "diffview" {
+		case key.Matches(msg, config.DefaultKeyMap.OpenEditor):
+			// Get file and line from preview window if focused there
+			if a.state.FocusedWindow == config.WindowDiffView {
 				filePath, lineNum := a.diffView.GetSelectedLocation()
+				if filePath != "" {
+					return a, a.openInEditorAtLine(filePath, lineNum)
+				}
+			} else if a.state.FocusedWindow == config.WindowFileView {
+				filePath := a.fileView.GetFilePath()
+				lineNum := a.fileView.GetSelectedLine()
 				if filePath != "" {
 					return a, a.openInEditorAtLine(filePath, lineNum)
 				}
@@ -262,6 +265,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state.SelectFile(msg.Index)
 		a.state.SelectedFolder = ""
 		a.state.IsRootSelected = false
+		// Use FileView in browse mode, DiffView otherwise
+		if a.state.FileViewMode == git.FileViewAll {
+			return a, a.loadFileContent()
+		}
 		return a, a.loadDiff()
 
 	case FolderSelectedMsg:
@@ -280,6 +287,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, a.loadDiff())
 		}
 		return a, tea.Batch(cmds...)
+
+	case CommitsLoadedMsg:
+		a.commitList.SetCommits(msg.Commits)
+		return a, nil
 
 	case DiffLoadedMsg:
 		a.state.Diff = msg.Content
@@ -302,7 +313,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case GitChangedMsg:
 		// File system changed, refresh data (including PR for branch switches)
-		return a, tea.Batch(a.loadBranchInfo(), a.loadFiles(), a.loadDiff(), a.loadDiffStats(), a.loadPR())
+		return a, tea.Batch(a.loadBranchInfo(), a.loadFiles(), a.loadCommits(), a.loadDiff(), a.loadDiffStats(), a.loadPR())
 
 	case PRLoadedMsg:
 		if msg.Err != nil {
@@ -324,6 +335,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.diffView.SetFolderContent(msg.Content, msg.Path, a.state.IsRootSelected, a.state.PR)
 		return a, nil
 
+	case FileContentLoadedMsg:
+		a.fileView.SetContent(msg.Content, msg.Path)
+		return a, nil
+
 	case PRPollTickMsg:
 		// Refresh PR data and schedule next poll
 		return a, tea.Batch(a.loadPR(), a.schedulePRPoll())
@@ -334,12 +349,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Always allow quit
-	if key.Matches(msg, keys.DefaultKeyMap.Quit) {
+	if key.Matches(msg, config.DefaultKeyMap.Quit) {
 		return a, tea.Quit
 	}
 
 	// Close modal on ? or Escape
-	if key.Matches(msg, keys.DefaultKeyMap.Help) || key.Matches(msg, keys.DefaultKeyMap.Escape) {
+	if key.Matches(msg, config.DefaultKeyMap.Help) || key.Matches(msg, config.DefaultKeyMap.Escape) {
 		a.state.CloseModal()
 		return a, nil
 	}
@@ -350,37 +365,97 @@ func (a *App) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Windows mutate themselves and return self, so we only need the command
 	switch a.state.FocusedWindow {
-	case "filelist":
-		var w window.Window
-		w, cmd = a.fileList.Update(msg)
-		a.fileList = w.(*window.FileList)
-	case "diffview":
-		var w window.Window
-		w, cmd = a.diffView.Update(msg)
-		a.diffView = w.(*window.DiffView)
+	case config.WindowFileList:
+		_, cmd = a.fileList.Update(msg)
+	case config.WindowDiffView:
+		_, cmd = a.diffView.Update(msg)
+	case config.WindowFileView:
+		_, cmd = a.fileView.Update(msg)
 	}
 
 	return a, cmd
 }
 
 func (a *App) cycleFocus(reverse bool) {
-	windowOrder := []string{"filelist", "diffview"}
+	// Use the current preview window in the cycle
+	previewWindow := a.getPreviewWindow()
+	windowOrder := []string{config.WindowFileList, previewWindow}
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
 }
 
-func (a *App) focusNext() {
-	a.cycleFocus(false)
-}
-
-func (a *App) focusPrev() {
-	a.cycleFocus(true)
-}
-
 func (a *App) updateFocus() {
-	a.fileList.SetFocus(a.state.FocusedWindow == "filelist")
-	a.diffView.SetFocus(a.state.FocusedWindow == "diffview")
+	a.fileList.SetFocus(a.state.FocusedWindow == config.WindowFileList)
+	a.diffView.SetFocus(a.state.FocusedWindow == config.WindowDiffView)
+	a.fileView.SetFocus(a.state.FocusedWindow == config.WindowFileView)
+}
+
+// getPreviewWindow returns the current preview window name based on view mode
+func (a *App) getPreviewWindow() string {
+	if a.state.FileViewMode == git.FileViewAll {
+		return config.WindowFileView
+	}
+	return config.WindowDiffView
+}
+
+// setPreviewWindow updates layout assignments to use the specified preview window
+func (a *App) setPreviewWindow(windowName string) {
+	a.assignments["right"] = windowName
+	a.assignments["bottom"] = windowName
+	// Reset focus to file list when switching preview windows
+	a.state.FocusedWindow = config.WindowFileList
+	a.updateFocus()
+}
+
+// setMode sets the file view and diff mode directly
+func (a *App) setMode(viewMode git.FileViewMode, diffMode git.DiffMode) (tea.Model, tea.Cmd) {
+	a.state.SetFileViewMode(viewMode)
+	a.state.SetDiffMode(diffMode)
+	a.fileList.SetViewMode(viewMode)
+
+	if viewMode == git.FileViewAll {
+		a.setPreviewWindow(config.WindowFileView)
+		return a, a.loadFiles()
+	}
+
+	a.setPreviewWindow(config.WindowDiffView)
+	return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadDiffStats())
+}
+
+// cycleMode cycles through: changed:working → changed:branch → browse → docs
+func (a *App) cycleMode() (tea.Model, tea.Cmd) {
+	switch a.state.FileViewMode {
+	case git.FileViewChanged:
+		if a.state.DiffMode == git.DiffModeWorking {
+			// changed:working → changed:branch
+			a.state.SetDiffMode(git.DiffModeBranch)
+			return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadDiffStats())
+		}
+		// changed:branch → browse
+		a.state.SetFileViewMode(git.FileViewAll)
+		a.fileList.SetViewMode(git.FileViewAll)
+		a.setPreviewWindow(config.WindowFileView)
+		return a, a.loadFiles()
+
+	case git.FileViewAll:
+		// browse → docs
+		a.state.SetFileViewMode(git.FileViewDocs)
+		a.fileList.SetViewMode(git.FileViewDocs)
+		a.setPreviewWindow(config.WindowDiffView)
+		return a, a.loadFiles()
+
+	case git.FileViewDocs:
+		// docs → changed:working
+		a.state.SetFileViewMode(git.FileViewChanged)
+		a.state.SetDiffMode(git.DiffModeWorking)
+		a.fileList.SetViewMode(git.FileViewChanged)
+		a.setPreviewWindow(config.WindowDiffView)
+		return a, tea.Batch(a.loadFiles(), a.loadDiff(), a.loadDiffStats())
+	}
+
+	return a, nil
 }
 
 // View renders the application
@@ -401,7 +476,7 @@ func (a *App) View() string {
 	mainView := a.layout.Render(a.windows, a.assignments, statusBar)
 
 	// Render modal overlay if active
-	if a.state.ActiveModal == "help" {
+	if a.state.ActiveModal == config.ModalHelp {
 		mainView = a.renderWithModal(mainView, a.help)
 	}
 
@@ -415,58 +490,112 @@ func (a *App) renderStatusBar() string {
 		branch = "unknown"
 	}
 
-	// Mode
-	mode := fmt.Sprintf("[%s]", a.state.DiffMode.String())
-	if a.state.DiffStyle == git.DiffStyleSideBySide {
-		mode += " [split]"
-	}
-	if viewMode := a.state.FileViewMode.String(); viewMode != "" {
-		mode += fmt.Sprintf(" [%s]", viewMode)
+	// View mode indicator
+	var modes string
+	switch a.state.FileViewMode {
+	case git.FileViewAll:
+		modes = "[browse]"
+	case git.FileViewDocs:
+		modes = "[docs]"
+	default:
+		modes = fmt.Sprintf("[changed:%s]", a.state.DiffMode.String())
 	}
 
 	// File count
 	fileCount := fmt.Sprintf("%d files", len(a.state.Files))
 
-	// Diff stats
+	// Diff stats (with status bar background)
 	stats := ""
 	if a.state.DiffAdded > 0 || a.state.DiffRemoved > 0 {
-		addedStyle := a.styles.DiffAdded
-		removedStyle := a.styles.DiffRemoved
+		bg := a.styles.StatusBar.GetBackground()
+		addedStyle := lipgloss.NewStyle().Foreground(a.styles.DiffAdded.GetForeground()).Background(bg)
+		removedStyle := lipgloss.NewStyle().Foreground(a.styles.DiffRemoved.GetForeground()).Background(bg)
 		stats = fmt.Sprintf("%s %s",
 			addedStyle.Render(fmt.Sprintf("+%d", a.state.DiffAdded)),
 			removedStyle.Render(fmt.Sprintf("-%d", a.state.DiffRemoved)),
 		)
 	}
 
-	// Status message (temporary)
+	// PR info
+	prInfo := ""
+	if a.state.PR != nil {
+		// Comment count
+		commentCount := len(a.state.PR.Comments) + len(a.state.PR.ReviewComments)
+		if commentCount > 0 {
+			prInfo = fmt.Sprintf("%d💬", commentCount)
+		}
+
+		// Review state - find the most relevant review
+		reviewState := ""
+		for _, r := range a.state.PR.Reviews {
+			switch r.State {
+			case "APPROVED":
+				reviewState = "✓"
+			case "CHANGES_REQUESTED":
+				reviewState = "✗"
+			}
+		}
+		if reviewState != "" {
+			if prInfo != "" {
+				prInfo += " "
+			}
+			prInfo += reviewState
+		}
+	}
+
+	// Status message (temporary, with status bar background)
 	statusMsg := ""
 	if a.statusMessage != "" {
-		statusMsg = a.styles.Muted.Render(" │ " + a.statusMessage)
+		bg := a.styles.StatusBar.GetBackground()
+		mutedStyle := lipgloss.NewStyle().Foreground(a.styles.Muted.GetForeground()).Background(bg)
+		statusMsg = mutedStyle.Render(" │ " + a.statusMessage)
 		a.statusMessage = "" // Clear after showing
 	}
 
-	// Build status bar
-	left := fmt.Sprintf(" %s  %s  %s", branch, mode, fileCount)
+	// Build left content
+	left := fmt.Sprintf("%s  %s  %s", branch, modes, fileCount)
 	if stats != "" {
 		left += "  " + stats
 	}
+	if prInfo != "" {
+		left += "  " + prInfo
+	}
 	left += statusMsg
 
-	// Pad to full width
-	padding := a.width - lipgloss.Width(left)
-	if padding < 0 {
-		padding = 0
+	// Right content
+	right := "[?]"
+
+	// Calculate widths (lipgloss.Width handles ANSI codes)
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+
+	// Available space for padding (account for 1 space on each side)
+	available := a.width - 2
+	padding := available - leftWidth - rightWidth
+	if padding < 1 {
+		padding = 1
 	}
 
-	return a.styles.StatusBar.
+	// Style for muted text with status bar background
+	mutedWithBg := lipgloss.NewStyle().
+		Foreground(a.styles.Muted.GetForeground()).
+		Background(a.styles.StatusBar.GetBackground())
+
+	// Build final line with spaces
+	line := " " + left + strings.Repeat(" ", padding) + mutedWithBg.Render(right) + " "
+
+	// Render with background
+	return lipgloss.NewStyle().
+		Background(a.styles.StatusBar.GetBackground()).
+		Foreground(a.styles.StatusBar.GetForeground()).
 		Width(a.width).
-		Render(left + strings.Repeat(" ", padding))
+		Render(line)
 }
 
 func (a *App) renderWithModal(background string, modal window.Window) string {
 	// Calculate modal size - let content determine height
-	modalWidth := min(50, a.width-4)
-	modalHeight := min(26, a.height-4)
+	modalWidth := min(config.ModalMaxWidth, a.width-config.ModalPadding)
+	modalHeight := min(config.ModalMaxHeight, a.height-config.ModalPadding)
 
 	// Render modal content
 	modalContent := modal.View(modalWidth, modalHeight)
@@ -522,6 +651,20 @@ func (a *App) loadFiles() tea.Cmd {
 	}
 }
 
+func (a *App) loadCommits() tea.Cmd {
+	return func() tea.Msg {
+		commits, err := a.git.Log()
+		if err != nil {
+			return CommitsLoadedMsg{Commits: nil}
+		}
+		// Limit to 8 commits
+		if len(commits) > 8 {
+			commits = commits[:8]
+		}
+		return CommitsLoadedMsg{Commits: commits}
+	}
+}
+
 func (a *App) loadDiff() tea.Cmd {
 	return func() tea.Msg {
 		// Check if file is unchanged (in all-files or docs mode)
@@ -552,6 +695,19 @@ func (a *App) loadDiffStats() tea.Cmd {
 			return DiffStatsMsg{Added: 0, Removed: 0}
 		}
 		return DiffStatsMsg{Added: added, Removed: removed}
+	}
+}
+
+func (a *App) loadFileContent() tea.Cmd {
+	return func() tea.Msg {
+		if a.state.SelectedFile == "" {
+			return FileContentLoadedMsg{Content: "", Path: ""}
+		}
+		content, err := a.git.ReadFile(a.state.SelectedFile)
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return FileContentLoadedMsg{Content: content, Path: a.state.SelectedFile}
 	}
 }
 

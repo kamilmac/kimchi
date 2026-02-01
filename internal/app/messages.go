@@ -11,11 +11,6 @@ type FileSelectedMsg struct {
 	Path  string
 }
 
-// DiffModeChangedMsg is sent when the diff mode changes
-type DiffModeChangedMsg struct {
-	Mode git.DiffMode
-}
-
 // FilesLoadedMsg is sent when files are loaded from git
 type FilesLoadedMsg struct {
 	Files []git.FileStatus
@@ -94,3 +89,14 @@ type FolderDiffLoadedMsg struct {
 
 // PRPollTickMsg triggers a PR data refresh
 type PRPollTickMsg struct{}
+
+// FileContentLoadedMsg is sent when file content is loaded for FileView
+type FileContentLoadedMsg struct {
+	Content string
+	Path    string
+}
+
+// CommitsLoadedMsg is sent when commits are loaded
+type CommitsLoadedMsg struct {
+	Commits []git.Commit
+}

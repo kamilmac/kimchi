@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
 )
@@ -13,9 +14,8 @@ type State struct {
 	SelectedFolder string   // non-empty when folder selected
 	FolderChildren []string // file paths in selected folder
 	IsRootSelected bool     // true when root is selected (PR summary)
-	DiffMode       git.DiffMode
-	DiffStyle      git.DiffStyle
-	FileViewMode   git.FileViewMode
+	DiffMode     git.DiffMode
+	FileViewMode git.FileViewMode
 
 	// Data
 	Files       []git.FileStatus
@@ -40,7 +40,7 @@ type State struct {
 func NewState() *State {
 	return &State{
 		DiffMode:      git.DiffModeBranch,
-		FocusedWindow: "filelist",
+		FocusedWindow: config.WindowFileList,
 	}
 }
 
@@ -66,15 +66,6 @@ func (s *State) SetFileViewMode(mode git.FileViewMode) {
 	s.FileViewMode = mode
 	s.SelectedFile = ""
 	s.SelectedIndex = 0
-}
-
-// ToggleDiffStyle toggles between unified and side-by-side diff views
-func (s *State) ToggleDiffStyle() {
-	if s.DiffStyle == git.DiffStyleUnified {
-		s.DiffStyle = git.DiffStyleSideBySide
-	} else {
-		s.DiffStyle = git.DiffStyleUnified
-	}
 }
 
 // SetFiles updates the file list

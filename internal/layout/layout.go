@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kmacinski/blocks/internal/config"
 	"github.com/kmacinski/blocks/internal/window"
 )
 
@@ -36,22 +37,12 @@ var (
 	TwoColumn = Layout{
 		Name:      "two-column",
 		Direction: Horizontal,
-		Ratios:    []int{30, 70},
-		Slots: []Slot{
-			{Name: "left"},
-			{Name: "right"},
-		},
-	}
-
-	ThreeSlot = Layout{
-		Name:      "three-slot",
-		Direction: Horizontal,
-		Ratios:    []int{30, 70},
+		Ratios:    []int{config.LayoutLeftRatio, config.LayoutRightRatio},
 		Slots: []Slot{
 			{
 				Name:      "left",
 				Direction: Vertical,
-				Ratios:    []int{60, 40},
+				Ratios:    []int{70, 30}, // files 70%, commits 30%
 				Children: []Slot{
 					{Name: "left-top"},
 					{Name: "left-bottom"},
@@ -64,18 +55,7 @@ var (
 	Stacked = Layout{
 		Name:      "stacked",
 		Direction: Vertical,
-		Ratios:    []int{30, 70},
-		Slots: []Slot{
-			{Name: "top"},
-			{Name: "bottom"},
-		},
-	}
-
-	// StackedThree is a vertical layout with three windows
-	StackedThree = Layout{
-		Name:      "stacked-three",
-		Direction: Vertical,
-		Ratios:    []int{25, 50, 25},
+		Ratios:    []int{30, 15, 55}, // files, commits, diff
 		Slots: []Slot{
 			{Name: "top"},
 			{Name: "middle"},
@@ -98,7 +78,7 @@ type ResponsiveConfig struct {
 // DefaultResponsive is the default responsive configuration
 var DefaultResponsive = ResponsiveConfig{
 	Breakpoints: []Breakpoint{
-		{MinWidth: 80, Layout: TwoColumn},
+		{MinWidth: config.LayoutBreakpoint, Layout: TwoColumn},
 		{MinWidth: 0, Layout: Stacked},
 	},
 }

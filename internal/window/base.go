@@ -1,16 +1,16 @@
 package window
 
-import "github.com/kmacinski/blocks/internal/ui"
+import "github.com/kmacinski/blocks/internal/config"
 
 // Base provides common functionality for windows
 type Base struct {
 	name    string
 	focused bool
-	styles  ui.Styles
+	styles  config.Styles
 }
 
 // NewBase creates a new base window
-func NewBase(name string, styles ui.Styles) Base {
+func NewBase(name string, styles config.Styles) Base {
 	return Base{
 		name:   name,
 		styles: styles,
@@ -33,6 +33,6 @@ func (b *Base) SetFocus(focused bool) {
 }
 
 // Styles returns the window styles
-func (b *Base) Styles() ui.Styles {
+func (b *Base) Styles() config.Styles {
 	return b.styles
 }

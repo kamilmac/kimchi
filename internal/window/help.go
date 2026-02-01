@@ -5,8 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/kmacinski/blocks/internal/ui"
+	"github.com/kmacinski/blocks/internal/config"
 )
 
 // Help displays keybinding help
@@ -15,7 +14,7 @@ type Help struct {
 }
 
 // NewHelp creates a new help window
-func NewHelp(styles ui.Styles) *Help {
+func NewHelp(styles config.Styles) *Help {
 	return &Help{
 		Base: NewBase("help", styles),
 	}
@@ -28,12 +27,7 @@ func (h *Help) Update(msg tea.Msg) (Window, tea.Cmd) {
 
 // View renders the help content
 func (h *Help) View(width, height int) string {
-	var style lipgloss.Style
-	if h.focused {
-		style = h.styles.Modal
-	} else {
-		style = h.styles.Modal
-	}
+	style := h.styles.Modal
 
 	contentWidth := width - 4   // padding and border
 	contentHeight := height - 4 // padding and border
@@ -45,42 +39,77 @@ func (h *Help) View(width, height int) string {
 	var lines []string
 
 	// Title
-	title := h.styles.ModalTitle.Render("Keybindings")
+	title := h.styles.ModalTitle.Render("Blocks - AI-Native Code Review")
 	lines = append(lines, title)
 	lines = append(lines, "")
 
-	// Keybindings
-	bindings := []struct {
+	// About section
+	lines = append(lines, h.styles.Bold.Render("About"))
+	lines = append(lines, h.styles.Muted.Render("Review AI-generated code changes. Read-first,"))
+	lines = append(lines, h.styles.Muted.Render("write-never. See what changed, approve with confidence."))
+	lines = append(lines, "")
+
+	// Navigation section
+	lines = append(lines, h.styles.Bold.Render("Navigation"))
+	navBindings := []struct {
 		key  string
 		desc string
 	}{
-		{"j/k", "Navigate up/down"},
-		{"h/l", "Switch window"},
-		{"Tab", "Cycle windows"},
+		{"j/k", "Move up/down"},
+		{"J/K", "Fast move (5 lines)"},
+		{"h/l", "Collapse/expand folder"},
+		{"Tab", "Switch window"},
 		{"Ctrl+d/u", "Scroll half page"},
 		{"g/G", "Go to top/bottom"},
-		{"", ""},
-		{"1", "Working diff mode"},
-		{"2", "Branch diff mode"},
-		{"", ""},
-		{"y", "Copy file path"},
+		{"Enter", "Select file/folder"},
+	}
+	for _, b := range navBindings {
+		lines = append(lines, h.formatBinding(b.key, b.desc))
+	}
+	lines = append(lines, "")
+
+	// Modes section
+	lines = append(lines, h.styles.Bold.Render("Modes"))
+	lines = append(lines, h.styles.Muted.Render("Press m to cycle, or use number keys:"))
+	modeBindings := []struct {
+		key  string
+		desc string
+	}{
+		{"1", "changed:working (uncommitted)"},
+		{"2", "changed:branch (vs base)"},
+		{"3", "browse (all files)"},
+		{"4", "docs (markdown only)"},
+		{"m", "cycle through modes"},
+	}
+	for _, b := range modeBindings {
+		lines = append(lines, h.formatBinding(b.key, b.desc))
+	}
+	lines = append(lines, "")
+
+	// Actions section
+	lines = append(lines, h.styles.Bold.Render("Actions"))
+	actionBindings := []struct {
+		key  string
+		desc string
+	}{
+		{"y", "Copy path (with line number)"},
 		{"o", "Open in $EDITOR"},
 		{"r", "Refresh"},
-		{"?", "Toggle help"},
+		{"?", "Toggle this help"},
 		{"q", "Quit"},
 	}
-
-	for _, b := range bindings {
-		if b.key == "" {
-			lines = append(lines, "")
-			continue
-		}
-		keyStyle := h.styles.Bold.Copy().Width(12)
-		line := fmt.Sprintf("%s %s", keyStyle.Render(b.key), h.styles.ListItem.Render(b.desc))
-		lines = append(lines, line)
+	for _, b := range actionBindings {
+		lines = append(lines, h.formatBinding(b.key, b.desc))
 	}
-
 	lines = append(lines, "")
+
+	// Tips section
+	lines = append(lines, h.styles.Bold.Render("Tips"))
+	lines = append(lines, h.styles.Muted.Render("• Collapse folders with h, expand with l"))
+	lines = append(lines, h.styles.Muted.Render("• Collapsed folders show aggregated status"))
+	lines = append(lines, h.styles.Muted.Render("• Select root (./) to see PR summary"))
+	lines = append(lines, "")
+
 	lines = append(lines, h.styles.Muted.Render("Press ? or Esc to close"))
 
 	content := strings.Join(lines, "\n")
@@ -88,4 +117,10 @@ func (h *Help) View(width, height int) string {
 	return style.
 		Width(contentWidth).
 		Render(content)
+}
+
+// formatBinding formats a key-description pair
+func (h *Help) formatBinding(key, desc string) string {
+	keyStyle := h.styles.Bold.Copy().Width(12)
+	return fmt.Sprintf("%s %s", keyStyle.Render(key), h.styles.ListItem.Render(desc))
 }
