@@ -47,8 +47,8 @@ fn main() -> Result<()> {
     // Create app
     let mut app = App::new(path.to_str().unwrap_or("."))?;
 
-    // Create event handler
-    let events = EventHandler::new(Duration::from_millis(100));
+    // Create event handler with git file watcher
+    let events = EventHandler::with_git_watcher(Duration::from_millis(100), &path);
 
     // Main loop
     let result = run_app(&mut terminal, &mut app, &events);

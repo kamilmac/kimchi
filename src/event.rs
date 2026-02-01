@@ -1,5 +1,8 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use notify::{RecommendedWatcher, RecursiveMode};
+use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEventKind};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -25,10 +28,103 @@ pub struct EventHandler {
     rx: mpsc::Receiver<AppEvent>,
     _tx: mpsc::Sender<AppEvent>,
     paused: Arc<AtomicBool>,
+    _watcher: Option<notify_debouncer_mini::Debouncer<RecommendedWatcher>>,
 }
 
 impl EventHandler {
     pub fn new(tick_rate: Duration) -> Self {
+        Self::with_watcher(tick_rate, None)
+    }
+
+    pub fn with_git_watcher(tick_rate: Duration, git_dir: &Path) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let event_tx = tx.clone();
+        let paused = Arc::new(AtomicBool::new(false));
+        let paused_clone = paused.clone();
+
+        // Set up file watcher for .git/index
+        let watcher_tx = tx.clone();
+        let watcher = Self::setup_watcher(git_dir, watcher_tx);
+
+        // Spawn event polling thread
+        thread::spawn(move || {
+            loop {
+                if paused_clone.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+
+                if event::poll(tick_rate).unwrap_or(false) {
+                    if paused_clone.load(Ordering::Relaxed) {
+                        continue;
+                    }
+
+                    if let Ok(event) = event::read() {
+                        let app_event = match event {
+                            Event::Key(key) => Some(AppEvent::Key(key)),
+                            Event::Resize(w, h) => Some(AppEvent::Resize(w, h)),
+                            _ => None,
+                        };
+
+                        if let Some(e) = app_event {
+                            if event_tx.send(e).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                } else if !paused_clone.load(Ordering::Relaxed) {
+                    if event_tx.send(AppEvent::Tick).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Self {
+            rx,
+            _tx: tx,
+            paused,
+            _watcher: watcher,
+        }
+    }
+
+    fn setup_watcher(
+        git_dir: &Path,
+        tx: mpsc::Sender<AppEvent>,
+    ) -> Option<notify_debouncer_mini::Debouncer<RecommendedWatcher>> {
+        let git_index = git_dir.join(".git").join("index");
+        if !git_index.exists() {
+            return None;
+        }
+
+        let debouncer = new_debouncer(Duration::from_millis(500), move |res: DebounceEventResult| {
+            if let Ok(events) = res {
+                for event in events {
+                    if matches!(event.kind, DebouncedEventKind::Any) {
+                        let _ = tx.send(AppEvent::FileChanged);
+                        break;
+                    }
+                }
+            }
+        });
+
+        match debouncer {
+            Ok(mut watcher) => {
+                if watcher
+                    .watcher()
+                    .watch(&git_index, RecursiveMode::NonRecursive)
+                    .is_ok()
+                {
+                    Some(watcher)
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn with_watcher(tick_rate: Duration, watcher: Option<notify_debouncer_mini::Debouncer<RecommendedWatcher>>) -> Self {
         let (tx, rx) = mpsc::channel();
         let event_tx = tx.clone();
         let paused = Arc::new(AtomicBool::new(false));
@@ -74,7 +170,12 @@ impl EventHandler {
             }
         });
 
-        Self { rx, _tx: tx, paused }
+        Self {
+            rx,
+            _tx: tx,
+            paused,
+            _watcher: watcher,
+        }
     }
 
     /// Get the next event (blocking)
