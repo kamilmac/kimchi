@@ -73,6 +73,7 @@ func (d *DiffView) SetContent(content string, filePath string) {
 	d.filePath = filePath
 	d.folderPath = ""
 	d.isRoot = false
+	d.cursor = 0
 	if d.ready {
 		styled := d.renderContent(content)
 		d.viewport.SetContent(styled)
@@ -106,6 +107,7 @@ func (d *DiffView) SetFolderContent(content string, folderPath string, isRoot bo
 	d.folderPath = folderPath
 	d.isRoot = isRoot
 	d.pr = pr
+	d.cursor = 0
 
 	if d.ready {
 		var styled string
