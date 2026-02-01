@@ -517,13 +517,13 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 			if len(parts) == 2 {
 				currentFile = parts[1]
 			}
-			styledLine = d.styles.Muted.Render(line)
-			loc = lineLocation{filePath: currentFile, lineNum: 0}
+			// Skip diff header lines
+			continue
 		} else if strings.HasPrefix(line, "@@") {
 			_, newLineNum = parseHunkHeader(line)
 			newLineNum-- // Will be incremented below
-			styledLine = d.styles.DiffHeader.Render(line)
-			loc = lineLocation{filePath: currentFile, lineNum: newLineNum + 1}
+			// Skip hunk headers
+			continue
 		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			newLineNum++
 			styledLine = d.styles.DiffAdded.Render(line)
@@ -534,8 +534,8 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 			loc = lineLocation{filePath: currentFile, lineNum: newLineNum}
 		} else if strings.HasPrefix(line, "index ") ||
 			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
-			styledLine = d.styles.Muted.Render(line)
-			loc = lineLocation{filePath: currentFile, lineNum: 0}
+			// Skip metadata lines
+			continue
 		} else {
 			newLineNum++
 			styledLine = d.styles.DiffContext.Render(line)
@@ -694,8 +694,6 @@ func (d *DiffView) renderSideBySide(content string) string {
 			if len(parts) == 2 {
 				currentFile = parts[1]
 			}
-			result = append(result, d.styles.Muted.Render(truncateOrPad(line, d.viewport.Width)))
-			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: 0})
 			i++
 			continue
 		}
@@ -703,17 +701,13 @@ func (d *DiffView) renderSideBySide(content string) string {
 		// Header lines (index, ---, +++)
 		if strings.HasPrefix(line, "index ") ||
 			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
-			result = append(result, d.styles.Muted.Render(truncateOrPad(line, d.viewport.Width)))
-			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: 0})
 			i++
 			continue
 		}
 
-		// Hunk header
+		// Hunk header - parse but don't display
 		if strings.HasPrefix(line, "@@") {
 			leftNum, rightNum = parseHunkHeader(line)
-			result = append(result, d.styles.DiffHeader.Render(truncateOrPad(line, d.viewport.Width)))
-			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: rightNum})
 			i++
 			continue
 		}
