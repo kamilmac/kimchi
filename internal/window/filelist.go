@@ -50,7 +50,8 @@ type FileList struct {
 	height      int
 	width       int
 	onSelect    func(index int, path string) tea.Cmd
-	collapsed   map[string]bool // tracks collapsed folders by path
+	collapsed   map[string]bool  // tracks collapsed folders by path
+	viewMode    git.FileViewMode // current view mode
 }
 
 // NewFileList creates a new file list window
@@ -67,6 +68,63 @@ func (f *FileList) SetFiles(files []git.FileStatus) {
 	f.flatEntries = f.buildTree(files)
 	if f.cursor >= len(f.flatEntries) {
 		f.cursor = max(0, len(f.flatEntries)-1)
+	}
+}
+
+// SetViewMode updates the view mode and adjusts collapsed state
+func (f *FileList) SetViewMode(mode git.FileViewMode) {
+	prevMode := f.viewMode
+	f.viewMode = mode
+
+	// When entering "all files" mode, auto-collapse leaf folders
+	if mode == git.FileViewAll && prevMode != git.FileViewAll {
+		f.collapseLeafFolders()
+	}
+
+	// When leaving "all files" mode, clear collapsed state
+	if mode != git.FileViewAll && prevMode == git.FileViewAll {
+		f.collapsed = make(map[string]bool)
+	}
+
+	// Rebuild tree with new collapsed state
+	if len(f.files) > 0 {
+		f.flatEntries = f.buildTree(f.files)
+		if f.cursor >= len(f.flatEntries) {
+			f.cursor = max(0, len(f.flatEntries)-1)
+		}
+	}
+}
+
+// collapseLeafFolders collapses all folders that contain only files (no subdirectories)
+func (f *FileList) collapseLeafFolders() {
+	// Build a set of all directory paths
+	dirPaths := make(map[string]bool)
+	for _, file := range f.files {
+		parts := strings.Split(file.Path, string(filepath.Separator))
+		for i := 1; i < len(parts); i++ {
+			dirPath := strings.Join(parts[:i], string(filepath.Separator))
+			dirPaths[dirPath] = true
+		}
+	}
+
+	// Find leaf folders (folders that don't have any subdirectories)
+	leafFolders := make(map[string]bool)
+	for dir := range dirPaths {
+		isLeaf := true
+		for otherDir := range dirPaths {
+			if otherDir != dir && strings.HasPrefix(otherDir, dir+string(filepath.Separator)) {
+				isLeaf = false
+				break
+			}
+		}
+		if isLeaf {
+			leafFolders[dir] = true
+		}
+	}
+
+	// Collapse all leaf folders
+	for dir := range leafFolders {
+		f.collapsed[dir] = true
 	}
 }
 
@@ -427,9 +485,17 @@ func (f *FileList) View(width, height int) string {
 	var lines []string
 
 	// Title
-	title := "Files"
-	if len(f.files) > 0 {
-		title = fmt.Sprintf("Files (%d)", len(f.files))
+	var title string
+	if f.viewMode == git.FileViewAll {
+		title = "Browse"
+		if len(f.files) > 0 {
+			title = fmt.Sprintf("Browse (%d)", len(f.files))
+		}
+	} else {
+		title = "Files"
+		if len(f.files) > 0 {
+			title = fmt.Sprintf("Files (%d)", len(f.files))
+		}
 	}
 	titleLine := f.styles.WindowTitle.Render(title)
 	lines = append(lines, titleLine)
@@ -483,14 +549,33 @@ func (f *FileList) renderTreeLine(entry flatEntry, selected bool, maxWidth int) 
 	// Name
 	name := entry.display
 
-	// Status indicator
+	// Status indicator (hidden in "all files" mode)
 	var statusStr string
-	if entry.isDir && entry.collapsed && len(entry.childStats) > 0 {
-		// Aggregated status for collapsed folders
-		var parts []string
-		for _, s := range entry.childStats {
+	if f.viewMode != git.FileViewAll {
+		if entry.isDir && entry.collapsed && len(entry.childStats) > 0 {
+			// Aggregated status for collapsed folders
+			var parts []string
+			for _, s := range entry.childStats {
+				var statusStyle lipgloss.Style
+				switch s {
+				case git.StatusModified:
+					statusStyle = f.styles.StatusModified
+				case git.StatusAdded:
+					statusStyle = f.styles.StatusAdded
+				case git.StatusDeleted:
+					statusStyle = f.styles.StatusDeleted
+				case git.StatusUntracked:
+					statusStyle = f.styles.StatusUntracked
+				case git.StatusRenamed:
+					statusStyle = f.styles.StatusRenamed
+				}
+				parts = append(parts, statusStyle.Render(s.String()))
+			}
+			statusStr = " " + strings.Join(parts, "")
+		} else if !entry.isDir && entry.status != git.StatusUnchanged {
+			// Single file status
 			var statusStyle lipgloss.Style
-			switch s {
+			switch entry.status {
 			case git.StatusModified:
 				statusStyle = f.styles.StatusModified
 			case git.StatusAdded:
@@ -502,35 +587,20 @@ func (f *FileList) renderTreeLine(entry flatEntry, selected bool, maxWidth int) 
 			case git.StatusRenamed:
 				statusStyle = f.styles.StatusRenamed
 			}
-			parts = append(parts, statusStyle.Render(s.String()))
+			statusStr = " " + statusStyle.Render(entry.status.String())
 		}
-		statusStr = " " + strings.Join(parts, "")
-	} else if !entry.isDir && entry.status != git.StatusUnchanged {
-		// Single file status
-		var statusStyle lipgloss.Style
-		switch entry.status {
-		case git.StatusModified:
-			statusStyle = f.styles.StatusModified
-		case git.StatusAdded:
-			statusStyle = f.styles.StatusAdded
-		case git.StatusDeleted:
-			statusStyle = f.styles.StatusDeleted
-		case git.StatusUntracked:
-			statusStyle = f.styles.StatusUntracked
-		case git.StatusRenamed:
-			statusStyle = f.styles.StatusRenamed
-		}
-		statusStr = " " + statusStyle.Render(entry.status.String())
 	}
 
-	// Comment indicator
+	// Comment indicator (hidden in "all files" mode)
 	var commentStr string
-	if entry.isDir && entry.collapsed && entry.hasComments {
-		// Collapsed folder with comments in children
-		commentStr = " " + f.styles.DiffHeader.Render("C")
-	} else if !entry.isDir && f.pr != nil && len(f.pr.FileComments[entry.path]) > 0 {
-		// Single file with comments
-		commentStr = " " + f.styles.DiffHeader.Render("C")
+	if f.viewMode != git.FileViewAll {
+		if entry.isDir && entry.collapsed && entry.hasComments {
+			// Collapsed folder with comments in children
+			commentStr = " " + f.styles.DiffHeader.Render("C")
+		} else if !entry.isDir && f.pr != nil && len(f.pr.FileComments[entry.path]) > 0 {
+			// Single file with comments
+			commentStr = " " + f.styles.DiffHeader.Render("C")
+		}
 	}
 
 	// Calculate available width for name

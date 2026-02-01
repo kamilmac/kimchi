@@ -188,14 +188,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.DefaultKeyMap.ViewChanged):
 			a.state.SetFileViewMode(git.FileViewChanged)
+			a.fileList.SetViewMode(git.FileViewChanged)
 			return a, a.loadFiles()
 
 		case key.Matches(msg, keys.DefaultKeyMap.ViewAllFiles):
 			a.state.SetFileViewMode(git.FileViewAll)
+			a.fileList.SetViewMode(git.FileViewAll)
 			return a, a.loadFiles()
 
 		case key.Matches(msg, keys.DefaultKeyMap.ViewDocs):
 			a.state.SetFileViewMode(git.FileViewDocs)
+			a.fileList.SetViewMode(git.FileViewDocs)
 			return a, a.loadFiles()
 
 		case key.Matches(msg, keys.DefaultKeyMap.ToggleDiffStyle):
