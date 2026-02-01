@@ -253,7 +253,18 @@ func (d *DiffView) View(width, height int) string {
 			lines = append(lines, "")
 		}
 	} else {
-		lines = append(lines, d.viewport.View())
+		// Get viewport content and highlight cursor line
+		viewportContent := d.viewport.View()
+		if d.focused && len(d.lineMap) > 0 {
+			viewportLines := strings.Split(viewportContent, "\n")
+			if d.cursor >= 0 && d.cursor < len(viewportLines) {
+				// Highlight cursor line with reverse video
+				cursorStyle := lipgloss.NewStyle().Reverse(true)
+				viewportLines[d.cursor] = cursorStyle.Render(viewportLines[d.cursor])
+			}
+			viewportContent = strings.Join(viewportLines, "\n")
+		}
+		lines = append(lines, viewportContent)
 	}
 
 	content := strings.Join(lines, "\n")
