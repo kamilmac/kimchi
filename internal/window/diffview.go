@@ -297,27 +297,76 @@ func (d *DiffView) styleUnifiedDiff(content string) string {
 
 		styled = append(styled, styledLine)
 
-		// Add comments for this line (only if we're tracking lines properly)
+		// Add comments for this line
 		if newLineNum > 0 {
 			if comments, ok := commentsByLine[newLineNum]; ok {
 				for _, c := range comments {
-					// Format comment body - replace newlines, truncate
-					body := strings.ReplaceAll(c.Body, "\n", " ")
-					maxLen := 60
-					if d.viewport.Width > 20 {
-						maxLen = d.viewport.Width - len(c.Author) - 12
-					}
-					if len(body) > maxLen {
-						body = body[:maxLen-3] + "..."
-					}
-					commentLine := fmt.Sprintf("   >> %s: %s", c.Author, body)
-					styled = append(styled, d.styles.DiffHeader.Render(commentLine))
+					styled = append(styled, d.renderComment(c)...)
 				}
 			}
 		}
 	}
 
 	return strings.Join(styled, "\n")
+}
+
+// renderComment formats a PR comment for display in the diff
+func (d *DiffView) renderComment(c github.LineComment) []string {
+	var lines []string
+	width := d.viewport.Width - 6 // Account for prefix
+	if width < 20 {
+		width = 60
+	}
+
+	// Author header
+	header := fmt.Sprintf("   ┌─ %s", c.Author)
+	lines = append(lines, d.styles.DiffHeader.Render(header))
+
+	// Comment body - wrap long lines
+	bodyLines := strings.Split(c.Body, "\n")
+	for _, bl := range bodyLines {
+		bl = strings.TrimSpace(bl)
+		if bl == "" {
+			lines = append(lines, d.styles.Muted.Render("   │"))
+			continue
+		}
+		// Word wrap
+		wrapped := wrapText(bl, width)
+		for _, w := range wrapped {
+			lines = append(lines, d.styles.Muted.Render("   │ "+w))
+		}
+	}
+
+	// Footer
+	lines = append(lines, d.styles.DiffHeader.Render("   └─"))
+
+	return lines
+}
+
+// wrapText wraps text to the specified width
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	var lines []string
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{}
+	}
+
+	current := words[0]
+	for _, word := range words[1:] {
+		if len(current)+1+len(word) <= width {
+			current += " " + word
+		} else {
+			lines = append(lines, current)
+			current = word
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
 }
 
 // diffLine represents a line in the side-by-side view
