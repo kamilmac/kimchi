@@ -300,6 +300,11 @@ func (d *DiffView) renderDiff(content string) string {
 		return d.styles.Muted.Render("No changes")
 	}
 
+	if d.isBinary(content) {
+		d.lineMap = nil
+		return d.styles.Muted.Render("Binary file")
+	}
+
 	if d.isDiffContent(content) {
 		return d.renderSideBySide(content)
 	}
