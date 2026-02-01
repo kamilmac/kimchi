@@ -350,15 +350,12 @@ func (a *App) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Windows mutate themselves and return self, so we only need the command
 	switch a.state.FocusedWindow {
 	case WindowFileList:
-		var w window.Window
-		w, cmd = a.fileList.Update(msg)
-		a.fileList = w.(*window.FileList)
+		_, cmd = a.fileList.Update(msg)
 	case WindowDiffView:
-		var w window.Window
-		w, cmd = a.diffView.Update(msg)
-		a.diffView = w.(*window.DiffView)
+		_, cmd = a.diffView.Update(msg)
 	}
 
 	return a, cmd
