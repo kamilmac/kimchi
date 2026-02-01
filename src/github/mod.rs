@@ -30,6 +30,8 @@ pub struct Comment {
     pub body: String,
     pub path: Option<String>,
     pub line: Option<u32>,
+    pub original_line: Option<u32>,
+    pub side: Option<String>, // "LEFT" or "RIGHT"
 }
 
 /// GitHub client using gh CLI
@@ -173,6 +175,8 @@ impl GitHubClient {
             body: String,
             path: Option<String>,
             line: Option<u32>,
+            original_line: Option<u32>,
+            side: Option<String>,
         }
 
         #[derive(Deserialize)]
@@ -192,6 +196,8 @@ impl GitHubClient {
                 body: c.body,
                 path: c.path.clone(),
                 line: c.line,
+                original_line: c.original_line,
+                side: c.side,
             };
 
             if let Some(path) = c.path {

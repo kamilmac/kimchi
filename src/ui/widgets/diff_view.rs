@@ -243,36 +243,55 @@ impl DiffViewState {
 
         let mut result = Vec::with_capacity(lines.len() + comments.len() * 2);
         let wrap_width = 120; // Wrap comments at this width
+        let mut rendered_comments: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
         for line in lines {
-            let line_num = line.right_num.or(line.left_num);
-            result.push(line);
+            result.push(line.clone());
 
             // Check if there are comments for this line
-            if let Some(num) = line_num {
-                for comment in comments {
-                    if comment.line == Some(num as u32) {
-                        // Add comment header
-                        result.push(DiffLine {
-                            left_text: Some(format!("💬 {}", comment.author)),
-                            right_text: None,
-                            left_num: None,
-                            right_num: None,
-                            line_type: LineType::Comment,
-                            is_header: true,
-                        });
-                        // Add comment body lines with wrapping
-                        for body_line in comment.body.lines() {
-                            for wrapped in wrap_text(body_line, wrap_width) {
-                                result.push(DiffLine {
-                                    left_text: Some(format!("   {}", wrapped)),
-                                    right_text: None,
-                                    left_num: None,
-                                    right_num: None,
-                                    line_type: LineType::Comment,
-                                    is_header: true,
-                                });
-                            }
+            for (idx, comment) in comments.iter().enumerate() {
+                // Skip already rendered comments
+                if rendered_comments.contains(&idx) {
+                    continue;
+                }
+
+                // Match comment to line based on side
+                let matches = match comment.side.as_deref() {
+                    Some("LEFT") => {
+                        // Comment on old file - match against left_num or original_line
+                        let target = comment.original_line.or(comment.line);
+                        line.left_num.map(|n| n as u32) == target
+                    }
+                    Some("RIGHT") | None => {
+                        // Comment on new file - match against right_num
+                        // Default to RIGHT if side not specified (most common case)
+                        line.right_num.map(|n| n as u32) == comment.line
+                    }
+                    _ => false,
+                };
+
+                if matches {
+                    rendered_comments.insert(idx);
+                    // Add comment header
+                    result.push(DiffLine {
+                        left_text: Some(format!("💬 {}", comment.author)),
+                        right_text: None,
+                        left_num: None,
+                        right_num: None,
+                        line_type: LineType::Comment,
+                        is_header: true,
+                    });
+                    // Add comment body lines with wrapping
+                    for body_line in comment.body.lines() {
+                        for wrapped in wrap_text(body_line, wrap_width) {
+                            result.push(DiffLine {
+                                left_text: Some(format!("   {}", wrapped)),
+                                right_text: None,
+                                left_num: None,
+                                right_num: None,
+                                line_type: LineType::Comment,
+                                is_header: true,
+                            });
                         }
                     }
                 }
@@ -329,8 +348,22 @@ impl DiffViewState {
         self.move_up_n(amount);
     }
 
+    /// Get line number for current cursor position
+    /// For diffs, always returns the new file line number (right side)
+    /// For file content view, returns left_num
     pub fn get_current_line_number(&self) -> Option<usize> {
-        self.lines.get(self.cursor).and_then(|line| line.right_num.or(line.left_num))
+        self.lines.get(self.cursor).and_then(|line| {
+            // Prefer right_num (new file) for diffs
+            // Only fall back to left_num for file content view (where right is None)
+            line.right_num.or_else(|| {
+                // Only use left_num if this is a file content view (not a removed line in diff)
+                if line.line_type == LineType::Context && line.right_text.is_none() {
+                    line.left_num
+                } else {
+                    None
+                }
+            })
+        })
     }
 
     pub fn ensure_visible(&mut self, height: usize) {
