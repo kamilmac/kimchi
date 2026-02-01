@@ -39,9 +39,9 @@ impl AppLayout {
 
         if area.width >= self.breakpoint {
             // Wide layout: left column (files + commits) | right (preview)
-            // Calculate left width as 20% clamped between 32 and 64
+            // Calculate left width as 20% clamped between 40 and 64
             let left_width = ((main_area.width as u32 * self.left_ratio as u32) / 100)
-                .clamp(32, 64) as u16;
+                .clamp(40, 64) as u16;
             let h_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
