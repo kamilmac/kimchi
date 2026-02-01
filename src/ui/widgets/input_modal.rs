@@ -93,7 +93,12 @@ impl InputModalState {
                     || key.modifiers.contains(KeyModifiers::ALT)
                 {
                     // Ctrl+Enter or Alt+Enter inserts newline
-                    self.input.insert(self.cursor_pos, '\n');
+                    let byte_pos = self.input
+                        .char_indices()
+                        .nth(self.cursor_pos)
+                        .map(|(i, _)| i)
+                        .unwrap_or(self.input.len());
+                    self.input.insert(byte_pos, '\n');
                     self.cursor_pos += 1;
                     InputResult::Continue
                 } else {
@@ -110,30 +115,47 @@ impl InputModalState {
                     }
                 }
             }
-            KeyCode::Char('y') if self.action.as_ref().map(|a| !a.needs_body()).unwrap_or(false) => {
-                // 'y' confirms for approve (no body needed)
-                InputResult::Submit
-            }
-            KeyCode::Char('n') if self.action.as_ref().map(|a| !a.needs_body()).unwrap_or(false) => {
-                // 'n' cancels for approve
-                self.hide();
-                InputResult::Cancelled
-            }
             KeyCode::Char(c) => {
-                self.input.insert(self.cursor_pos, c);
+                // For confirmation dialogs (no body needed), handle y/n specially
+                let is_confirmation = self.action.as_ref().map(|a| !a.needs_body()).unwrap_or(false);
+                if is_confirmation {
+                    match c {
+                        'y' | 'Y' => return InputResult::Submit,
+                        'n' | 'N' => {
+                            self.hide();
+                            return InputResult::Cancelled;
+                        }
+                        _ => return InputResult::Continue, // Ignore other keys for confirmation
+                    }
+                }
+
+                // For text input, insert character at cursor
+                // Convert char index to byte index
+                let byte_pos = self.input
+                    .char_indices()
+                    .nth(self.cursor_pos)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.input.len());
+                self.input.insert(byte_pos, c);
                 self.cursor_pos += 1;
                 InputResult::Continue
             }
             KeyCode::Backspace => {
                 if self.cursor_pos > 0 {
                     self.cursor_pos -= 1;
-                    self.input.remove(self.cursor_pos);
+                    // Convert char index to byte index
+                    if let Some((byte_pos, _)) = self.input.char_indices().nth(self.cursor_pos) {
+                        self.input.remove(byte_pos);
+                    }
                 }
                 InputResult::Continue
             }
             KeyCode::Delete => {
-                if self.cursor_pos < self.input.len() {
-                    self.input.remove(self.cursor_pos);
+                if self.cursor_pos < self.input.chars().count() {
+                    // Convert char index to byte index
+                    if let Some((byte_pos, _)) = self.input.char_indices().nth(self.cursor_pos) {
+                        self.input.remove(byte_pos);
+                    }
                 }
                 InputResult::Continue
             }
