@@ -39,7 +39,7 @@ func (h *Help) View(width, height int) string {
 	var lines []string
 
 	// Title
-	title := h.styles.ModalTitle.Render("Blocks - AI-Native Code Review")
+	title := h.styles.ModalTitle.Render("Kimchi - AI-Native Code Review")
 	lines = append(lines, title)
 	lines = append(lines, "")
 

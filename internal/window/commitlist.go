@@ -98,6 +98,14 @@ func (c *CommitList) View(width, height int) string {
 
 	var lines []string
 
+	// Title
+	title := "Commits"
+	if len(c.commits) > 0 {
+		title = fmt.Sprintf("Commits (%d)", len(c.commits))
+	}
+	lines = append(lines, c.styles.WindowTitle.Render(title))
+	contentHeight-- // Account for title
+
 	if len(c.commits) == 0 {
 		lines = append(lines, c.styles.Muted.Render("No commits"))
 	} else {

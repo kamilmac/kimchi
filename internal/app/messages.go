@@ -5,20 +5,39 @@ import (
 	"github.com/kmacinski/blocks/internal/github"
 )
 
-// FileSelectedMsg is sent when a file is selected in the file list
+// Selection messages
+
+// FileSelectedMsg is sent when a file is selected
 type FileSelectedMsg struct {
-	Index int
-	Path  string
+	Path string
 }
 
-// FilesLoadedMsg is sent when files are loaded from git
+// FolderSelectedMsg is sent when a folder is selected
+type FolderSelectedMsg struct {
+	Path     string
+	Children []string
+}
+
+// CommitSelectedMsg is sent when a commit is selected
+type CommitSelectedMsg struct {
+	Commit git.Commit
+}
+
+// Data loaded messages
+
+// FilesLoadedMsg is sent when files are loaded
 type FilesLoadedMsg struct {
 	Files []git.FileStatus
 }
 
-// DiffLoadedMsg is sent when a diff is loaded
-type DiffLoadedMsg struct {
+// ContentLoadedMsg is sent when diff or file content is loaded
+type ContentLoadedMsg struct {
 	Content string
+}
+
+// CommitsLoadedMsg is sent when commits are loaded
+type CommitsLoadedMsg struct {
+	Commits []git.Commit
 }
 
 // BranchInfoMsg is sent with branch information
@@ -33,75 +52,24 @@ type DiffStatsMsg struct {
 	Removed int
 }
 
-// ErrorMsg is sent when an error occurs
-type ErrorMsg struct {
-	Err error
-}
-
-// RefreshMsg triggers a refresh of all data
-type RefreshMsg struct{}
-
-// YankMsg is sent when a path should be copied to clipboard
-type YankMsg struct {
-	Path string
-}
-
-// OpenEditorMsg is sent when a file should be opened in editor
-type OpenEditorMsg struct {
-	Path string
-}
-
-// ToggleModalMsg toggles a modal
-type ToggleModalMsg struct {
-	Name string
-}
-
-// WindowResizeMsg is sent when the terminal is resized
-type WindowResizeMsg struct {
-	Width  int
-	Height int
-}
-
-// CloseModalMsg is sent when a modal should be closed
-type CloseModalMsg struct{}
-
-// GitChangedMsg is sent when git repository changes are detected
-type GitChangedMsg struct{}
-
 // PRLoadedMsg is sent when PR info is loaded
 type PRLoadedMsg struct {
 	PR  *github.PRInfo
 	Err error
 }
 
-// FolderSelectedMsg is sent when a folder is selected
-type FolderSelectedMsg struct {
-	Path     string   // folder path (empty for root)
-	IsRoot   bool     // true if root/PR summary view
-	Children []string // child file paths
+// System messages
+
+// ErrorMsg is sent when an error occurs
+type ErrorMsg struct {
+	Err error
 }
 
-// FolderDiffLoadedMsg is sent when a combined folder diff is loaded
-type FolderDiffLoadedMsg struct {
-	Content string
-	Path    string
-}
+// RefreshMsg triggers a refresh
+type RefreshMsg struct{}
 
-// PRPollTickMsg triggers a PR data refresh
+// GitChangedMsg is sent when git repository changes
+type GitChangedMsg struct{}
+
+// PRPollTickMsg triggers PR refresh
 type PRPollTickMsg struct{}
-
-// FileContentLoadedMsg is sent when file content is loaded for FileView
-type FileContentLoadedMsg struct {
-	Content string
-	Path    string
-}
-
-// CommitsLoadedMsg is sent when commits are loaded
-type CommitsLoadedMsg struct {
-	Commits []git.Commit
-}
-
-// CommitSelectedMsg is sent when a commit is selected
-type CommitSelectedMsg struct {
-	Commit git.Commit
-}

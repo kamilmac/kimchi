@@ -1,4 +1,4 @@
-# Blocks - AI-Native IDE
+# Kimchi - AI-Native IDE
 
 A read-first terminal IDE for AI-driven development workflows.
 
@@ -25,6 +25,7 @@ Current IDEs are built for humans writing code. In an AI workflow:
 A lightweight TUI that serves as your primary interface when working with AI:
 - **Changed files** - what did the AI touch?
 - **Diff view** - what exactly changed?
+- **Commit history** - recent commits on the branch
 - **PR summary** - overview of the pull request
 - **All files** - browse the entire codebase
 - **Docs** - your specs alongside the implementation
@@ -34,7 +35,7 @@ A lightweight TUI that serves as your primary interface when working with AI:
 ### Implemented
 - [x] Display list of changed files (git status)
 - [x] Tree view for file list with directories
-- [x] Show unified diff for selected file
+- [x] Show side-by-side diff for selected file
 - [x] Vim-style navigation (`j`/`k`)
 - [x] Fast navigation (`J`/`K` - 5 lines at a time)
 - [x] Auto-refresh on file changes (500ms debounce via fsnotify)
@@ -43,14 +44,14 @@ A lightweight TUI that serves as your primary interface when working with AI:
 - [x] Yank path (`y` to copy file path to clipboard)
 - [x] Open in editor (`o` to open in $EDITOR)
 - [x] Help modal with keybindings
-- [x] All files mode (`a` to toggle) - view entire repo
-- [x] Docs mode (`d` to toggle) - filter to markdown files only
+- [x] Unified mode system with 4 modes
 - [x] File content viewer for unchanged files
-- [x] Side-by-side diff view (`s` to toggle)
 - [x] PR comments - inline comments in diff view, "C" indicator on files with comments
 - [x] Folder selection - select directories to view combined diff
-- [x] PR summary view - when root is selected, shows PR title, description, author
+- [x] PR summary view - when commit is selected, shows commit details + PR summary
 - [x] Line selection in diff view - navigate to specific lines with cursor
+- [x] Commit list window - shows last 8 commits
+- [x] Collapsible folders with aggregate status indicators
 
 ### Future
 - [ ] FileExplorer - full project tree navigation with expand/collapse
@@ -75,61 +76,66 @@ Windows implement a common interface. Layout doesn't care what type they are.
 | Window | Description |
 |--------|-------------|
 | `FileList` | Tree view of changed files with status indicators |
-| `DiffView` | Diff preview for selected file (or file content, PR summary, folder diff) |
+| `CommitList` | List of recent commits on the branch |
+| `DiffView` | Diff preview for selected file (or folder diff, commit/PR summary) |
+| `FileView` | File content viewer for browse mode |
 | `Help` | Keybinding reference (modal) |
 
 Each window:
 - Has its own state (cursor position, scroll offset, etc.)
+- Has a header with relevant title
 - Can be focused or unfocused
 - Renders itself given width/height (doesn't know about layout)
 - Handles its own key events when focused
 
 ### Modes
 
-#### Diff Modes
-Control what changes are compared:
-
-| Mode | Key | Command | Description |
-|------|-----|---------|-------------|
-| Working | `1` | `git diff` | Uncommitted changes only |
-| Branch | `2` | `git diff <base>` | All changes on branch vs base (including uncommitted) |
-
-Default mode is **Branch**.
-
-#### File View Modes
-Control what files are shown (independent of diff mode):
+Kimchi uses a unified mode system. All modes are accessed via `m` (cycle) or number keys (`1-4`):
 
 | Mode | Key | Description |
 |------|-----|-------------|
-| Changed | `c` | Only files with changes (default) |
-| All | `a` | All tracked files in repository |
-| Docs | `d` | Markdown files only (*.md) |
+| changed:working | `1` | Uncommitted changes only (`git diff`) |
+| changed:branch | `2` | All changes vs base branch (`git diff <base>`) - **default** |
+| browse | `3` | Browse all tracked files in repository |
+| docs | `4` | Browse markdown files only (*.md) |
 
-When viewing all files or docs, selecting an unchanged file shows its full content instead of an empty diff.
+Mode switching:
+- `m` - Cycle through all modes in order
+- `1`/`2`/`3`/`4` - Jump directly to specific mode
+
+When browsing all files or docs, selecting an unchanged file shows its full content instead of a diff.
+
+### Selection Types
+
+The app tracks what is currently selected:
+
+| Selection | Preview Content |
+|-----------|-----------------|
+| File | Diff (in changed modes) or file content (in browse/docs modes) |
+| Folder | Combined diff of all changed files in folder |
+| Commit | Commit details + PR summary |
 
 ### Layouts
 
-Layouts define slot structure. They don't know about window types.
+Three-slot layout for wider terminals, stacked for narrow:
 
 ```
-TwoColumn (width >= 80)              Stacked (width < 80)
+ThreeSlot (width >= 80)              StackedThree (width < 80)
 ┌───────────┬───────────────────┐    ┌─────────────────────────┐
-│           │                   │    │          top            │
-│   left    │      right        │    ├─────────────────────────┤
-│   (30%)   │      (70%)        │    │         bottom          │
-│           │                   │    │                         │
+│ FileList  │                   │    │        FileList         │
+│   (30%)   │                   │    ├─────────────────────────┤
+├───────────┤   Preview (70%)   │    │       CommitList        │
+│CommitList │                   │    ├─────────────────────────┤
+│   (30%)   │                   │    │        Preview          │
 └───────────┴───────────────────┘    └─────────────────────────┘
 ```
 
 Window assignments:
 ```go
 assignments := map[string]string{
-    // TwoColumn layout
-    "left":  "filelist",
-    "right": "diffview",
-    // Stacked layout
-    "top":    "filelist",
-    "bottom": "diffview",
+    "left-top":    "filelist",
+    "left-bottom": "commitlist",
+    "right":       "diffview",  // or "fileview" in browse mode
 }
 ```
 
@@ -137,29 +143,21 @@ assignments := map[string]string{
 
 Help window is displayed as a modal overlay, centered on screen.
 
-```
-┌───────────┬───────────────────┐
-│           │  ┌─────────────┐  │
-│  filelist │  │    Help     │  │
-│           │  │   (modal)   │  │
-│           │  │             │  │
-│           │  └─────────────┘  │
-└───────────┴───────────────────┘
-```
-
 ## Default UI
 
 ```
 ┌─────────────────────┬──────────────────────────────────────┐
-│ Files (4)           │ Diff                                 │
-│ ▼ src/              │  func main() {                       │
-│   > main.go      M  │ -    oldLine()                       │
-│     app.go       M  │ +    newLine()                       │
-│ ▼ internal/         │ +    anotherLine()                   │
-│   ▼ git/            │  }                                   │
+│ Files (4)           │ src/main.go ────────────────── 42%   │
+│ ▼ src/              │  12 │ func main() {          │       │
+│   > main.go      M  │  13 │-    oldLine()          │       │
+│     app.go       M  │  14 │+    newLine()          │       │
+│ ▼ internal/         │  15 │+    anotherLine()      │       │
+│   ▼ git/            │  16 │ }                      │       │
 │       git.go     A  │                                      │
-│   README.md      M  │                                      │
-│                     │                                      │
+├─────────────────────┤                                      │
+│ Commits (8)         │                                      │
+│ > abc1234 Add feat  │                                      │
+│   def5678 Fix bug   │                                      │
 ├─────────────────────┴──────────────────────────────────────┤
 │ feature/blocks  [branch]  4 files  +127 -43                │
 └────────────────────────────────────────────────────────────┘
@@ -171,14 +169,12 @@ Shows at-a-glance context:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ feature/blocks  [branch] [split] [all]  4 files  +127 -43│
+│ feature/blocks  [branch]  4 files  +127 -43              │
 └──────────────────────────────────────────────────────────┘
-  │                │       │       │       │        │
-  │                │       │       │       │        └── Total diff stats
-  │                │       │       │       └── File count
-  │                │       │       └── All files mode indicator (when active)
-  │                │       └── Side-by-side diff indicator (when active)
-  │                └── Current diff mode
+  │                │        │        │
+  │                │        │        └── Total diff stats
+  │                │        └── File count
+  │                └── Current mode (working/branch/browse/docs)
   └── Current branch
 ```
 
@@ -188,6 +184,7 @@ Shows at-a-glance context:
 
 Files are displayed as a tree with directories:
 ```
+Files (4)
 ▼ src/
   > main.go           M
     app.go            M
@@ -196,19 +193,14 @@ Files are displayed as a tree with directories:
       git.go          A
   README.md           M
 ```
-- Directories shown with `▼` prefix in muted style
-- Cursor can land on directories for folder selection
+
+- Header shows "Files (N)" or "Browse (N)" based on mode
+- Directories shown with `▼`/`▶` prefix (expanded/collapsed)
+- `h` collapses focused folder, `l` expands it
+- Collapsed folders show aggregated status indicators
+- Root entry (`./`) shows combined view or PR summary
 - `j`/`k` for up/down, `J`/`K` for fast navigation (5 lines)
 - `g`/`G` for top/bottom
-
-### Content by Mode
-
-| Diff Mode | File View | Shows |
-|-----------|-----------|-------|
-| Working | Changed | Files with uncommitted changes |
-| Working | All | All files, status from `git status` |
-| Branch | Changed | Files changed vs base branch |
-| Branch | All | All files, status from branch diff |
 
 ### Status Indicators
 - `M` - Modified (orange)
@@ -217,7 +209,23 @@ Files are displayed as a tree with directories:
 - `?` - Untracked (muted)
 - `R` - Renamed (purple)
 - `C` - Has PR comments (shown alongside status)
-- ` ` - Unchanged (no indicator, in all files mode)
+- ` ` - Unchanged (no indicator, in browse/docs modes)
+
+## CommitList Window
+
+Shows recent commits on the branch:
+
+```
+Commits (8)
+> abc1234 Add new feature for handling...
+  def5678 Fix bug in authentication
+  ghi9012 Update documentation
+```
+
+- Header shows "Commits (N)"
+- Displays last 8 commits
+- Selectable - when selected, preview shows commit details + PR summary
+- `j`/`k` for navigation when focused
 
 ## DiffView Window
 
@@ -227,20 +235,19 @@ The DiffView displays different content based on selection:
 
 | Selection | Content |
 |-----------|---------|
-| File with changes | Unified or side-by-side diff |
+| File with changes | Side-by-side diff |
 | File without changes | File content with line numbers |
 | Folder | Combined diff of all changed files in folder |
-| Root (no selection) | PR summary (if PR exists) or empty state |
+| Commit | Commit details + PR summary |
 
 ### Display Format
 
-Unified diff with syntax highlighting:
+Side-by-side diff with syntax highlighting:
 ```
- context line
--removed line
-+added line
-+another new line
- context line
+  12 │ context line            │   12 │ context line
+  13 │-removed line            │      │
+     │                         │   13 │+added line
+  14 │ context line            │   14 │ context line
 ```
 
 Colors:
@@ -248,12 +255,10 @@ Colors:
 - Red (`#f38ba8`) for removals (`-`)
 - Muted for context lines
 
-Metadata lines (`@@`, `diff --git`, `index`, `---`, `+++`) are hidden by default.
-
 ### Line Selection
 
 DiffView supports line-by-line navigation with a cursor:
-- Cursor highlights the current line
+- Cursor highlights the current line (reverse video)
 - `j`/`k` moves cursor up/down one line
 - `J`/`K` moves cursor 5 lines (fast navigation)
 - `y` copies file path with current line number (`path/to/file.go:42`)
@@ -265,60 +270,52 @@ DiffView supports line-by-line navigation with a cursor:
 - `Ctrl+d`/`Ctrl+u`: half-page scroll
 - `g`/`G`: top/bottom
 
-Title shows scroll position (top/bot/percentage).
+Title shows file path and scroll position percentage.
 
-### Display Styles
+### Commit & PR Summary
 
-Toggle with `s` key:
-
-| Style | Description |
-|-------|-------------|
-| Unified | Traditional `git diff` output with +/- prefixes |
-| Side-by-side | Two-pane view with old on left, new on right |
-
-Side-by-side view:
-- Shows line numbers on both sides
-- Pairs deletions with additions when consecutive
-- Falls back to unified if terminal width < 60 columns
-- Status bar shows `[split]` indicator when active
-- When viewing file content (no diff), shows line numbers on left
-
-### PR Summary
-
-When root folder is selected (or no file selected) and a PR exists for the current branch:
-- Displays PR title, description, author
-- Shows PR status (open, merged, closed)
-- Lists general PR comments (not attached to specific lines)
-
-Large diffs truncated at 10,000 lines with message.
+When a commit is selected in CommitList:
+- Shows commit hash, author, date
+- Shows commit message
+- Shows PR summary if PR exists (title, description, reviews, comments)
 
 ## Keybindings
 
+### Navigation
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | Move down in list / move cursor in diff |
-| `k` / `↑` | Move up in list / move cursor in diff |
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
 | `J` | Fast down (5 lines) |
 | `K` | Fast up (5 lines) |
-| `h` / `l` | Switch focused window |
-| `Tab` / `Shift+Tab` | Cycle through windows |
-| `Ctrl+d` | Scroll diff half-page down |
-| `Ctrl+u` | Scroll diff half-page up |
+| `h` | Collapse folder |
+| `l` | Expand folder |
+| `Tab` | Cycle focus clockwise |
+| `Shift+Tab` | Cycle focus counter-clockwise |
+| `Ctrl+d` | Scroll half-page down |
+| `Ctrl+u` | Scroll half-page up |
 | `g` | Go to top |
 | `G` | Go to bottom |
+
+### Modes
+| Key | Action |
+|-----|--------|
+| `m` | Cycle through all modes |
+| `1` | changed:working mode |
+| `2` | changed:branch mode |
+| `3` | browse mode |
+| `4` | docs mode |
+
+### Actions
+| Key | Action |
+|-----|--------|
 | `Enter` | Select item |
-| `Escape` | Close modal / unfocus |
-| `q` | Quit |
-| `r` | Refresh |
 | `y` | Yank (copy) file path to clipboard (with line number in diff view) |
 | `o` | Open file in $EDITOR |
+| `r` | Refresh |
 | `?` | Toggle help modal |
-| `1` | Working diff mode |
-| `2` | Branch diff mode |
-| `c` | Show changed files |
-| `a` | Show all files |
-| `d` | Show docs (markdown) only |
-| `s` | Toggle side-by-side diff |
+| `Escape` | Close modal |
+| `q` | Quit |
 
 ## CLI Arguments
 
@@ -355,7 +352,7 @@ Changes trigger refresh after 500ms debounce.
 
 ## GitHub Integration
 
-Blocks integrates with GitHub via the `gh` CLI for PR-related features:
+Kimchi integrates with GitHub via the `gh` CLI for PR-related features:
 
 ### PR Detection
 - Automatically detects if current branch has an open PR
@@ -402,27 +399,28 @@ blocks/
 │   ├── app/
 │   │   ├── app.go          # tea.Model, orchestration, Update/View
 │   │   ├── state.go        # Shared state struct & transitions
+│   │   ├── mode.go         # AppMode, Selection, SelectionType
 │   │   └── messages.go     # All message types
 │   ├── config/
-│   │   └── config.go       # Centralized config: colors, styles, constants
+│   │   └── config.go       # Centralized config: colors, styles, keybindings
 │   ├── layout/
 │   │   └── layout.go       # Layout definitions & rendering
 │   ├── window/
 │   │   ├── window.go       # Window interface
 │   │   ├── base.go         # Common window functionality
 │   │   ├── filelist.go     # FileList with tree view
+│   │   ├── commitlist.go   # CommitList for recent commits
 │   │   ├── diffview.go     # DiffView with syntax highlighting
-│   │   ├── prsummary.go    # PR summary renderer (extracted component)
+│   │   ├── fileview.go     # FileView for browse mode
+│   │   ├── prsummary.go    # PR summary renderer
 │   │   └── help.go         # Help modal
 │   ├── git/
 │   │   ├── git.go          # Types, interface, enums
 │   │   └── client.go       # GitClient implementation
 │   ├── github/
 │   │   └── github.go       # GitHub client for PR data
-│   ├── watcher/
-│   │   └── watcher.go      # File system watcher
-│   └── keys/
-│       └── keys.go         # Keybinding definitions
+│   └── watcher/
+│       └── watcher.go      # File system watcher
 ├── docs/
 │   └── design.md
 ├── go.mod
@@ -468,33 +466,51 @@ type Client interface {
 Centralized state with message-based updates (Elm architecture):
 
 ```go
-type State struct {
-    // Selection
-    SelectedFile   string
-    SelectedIndex  int
-    SelectedFolder string   // non-empty when folder selected
-    FolderChildren []string // file paths in selected folder
-    IsRootSelected bool     // true when root is selected (PR summary)
-    DiffMode       DiffMode
-    DiffStyle      DiffStyle
-    FileViewMode   FileViewMode
+// AppMode represents the unified mode
+type AppMode int
+const (
+    ModeChangedWorking AppMode = iota  // 1
+    ModeChangedBranch                   // 2
+    ModeBrowse                          // 3
+    ModeDocs                            // 4
+)
 
-    // Data
-    Files       []FileStatus
-    Diff        string
-    Branch      string
-    BaseBranch  string
+// SelectionType represents what is selected
+type SelectionType int
+const (
+    SelectionNone SelectionType = iota
+    SelectionFile
+    SelectionFolder
+    SelectionCommit
+)
+
+// Selection tracks current selection
+type Selection struct {
+    Type       SelectionType
+    FilePath   string
+    FolderPath string
+    Children   []string
+    Commit     *git.Commit
+}
+
+// State holds all app state
+type State struct {
+    Mode      AppMode
+    Selection Selection
+
+    Files         []git.FileStatus
+    SelectedIndex int
+    DiffContent   string
+
+    Branch     string
+    BaseBranch string
     DiffAdded   int
     DiffRemoved int
 
-    // UI
     FocusedWindow string
     ActiveModal   string
 
-    // PR data
-    PR *PRInfo
-
-    // Errors
+    PR    *github.PRInfo
     Error string
 }
 ```
@@ -513,10 +529,11 @@ All configuration is centralized in `internal/config/config.go`:
 ### Window/Modal Names
 ```go
 const (
-    WindowFileList = "filelist"
-    WindowDiffView = "diffview"
-    WindowHelp     = "help"
-    ModalHelp      = "help"
+    WindowFileList   = "filelist"
+    WindowCommitList = "commitlist"
+    WindowDiffView   = "diffview"
+    WindowFileView   = "fileview"
+    ModalHelp        = "help"
 )
 ```
 
@@ -540,10 +557,26 @@ const (
 ### Diff View
 ```go
 const (
-    DiffSideBySideMinWidth = 60
-    DiffMaxLines           = 10000
-    DiffTabWidth           = 4
+    DiffPaneMinWidth = 40
+    DiffLineNumWidth = 4
+    DiffMaxLines     = 10000
+    DiffTabWidth     = 4
 )
+```
+
+### Keybindings
+```go
+var DefaultKeyMap = KeyMap{
+    Up:       key.NewBinding(key.WithKeys("k", "up")),
+    Down:     key.NewBinding(key.WithKeys("j", "down")),
+    Left:     key.NewBinding(key.WithKeys("h")),
+    Right:    key.NewBinding(key.WithKeys("l")),
+    FastUp:   key.NewBinding(key.WithKeys("K")),
+    FastDown: key.NewBinding(key.WithKeys("J")),
+    Tab:      key.NewBinding(key.WithKeys("tab")),
+    ShiftTab: key.NewBinding(key.WithKeys("shift+tab")),
+    // ... etc
+}
 ```
 
 ### Colors (Catppuccin Mocha)

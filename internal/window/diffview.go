@@ -1,7 +1,9 @@
 package window
+
 import (
 	"fmt"
 	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,45 +12,79 @@ import (
 	"github.com/kmacinski/blocks/internal/git"
 	"github.com/kmacinski/blocks/internal/github"
 )
+
+// PreviewType represents what the preview pane should show
+type PreviewType int
+
+const (
+	PreviewEmpty PreviewType = iota
+	PreviewFileDiff
+	PreviewFolderDiff
+	PreviewFileContent
+	PreviewCommitSummary
+)
+
+// PreviewContent holds all data needed to render a preview
+type PreviewContent struct {
+	Type       PreviewType
+	Content    string      // diff or file content
+	FilePath   string      // for file diff/content
+	FolderPath string      // for folder diff
+	Commit     *git.Commit // for commit summary
+	PR         *github.PRInfo
+}
+
 // lineLocation maps a rendered line to its source file and line number
 type lineLocation struct {
 	filePath string
 	lineNum  int
 }
-// DiffView displays a diff
+
+// DiffView displays diffs, file content, and summaries
 type DiffView struct {
 	Base
 	viewport   viewport.Model
-	content    string
-	filePath   string
-	folderPath string // non-empty when showing folder diff
-	isRoot     bool   // true when showing PR summary
+	preview    PreviewContent
 	pr         *github.PRInfo
-	commit     *git.Commit // current commit when in commit view
-	style      git.DiffStyle
 	ready      bool
 	width      int
 	height     int
-	// Line tracking for editor navigation
-	lineMap []lineLocation // maps rendered line index to file/line
-	cursor  int            // cursor position within viewport (0 = first visible line)
-	// PR summary renderer
+	lineMap    []lineLocation
+	cursor     int
 	prRenderer *PRSummaryRenderer
 }
+
 // NewDiffView creates a new diff view window
 func NewDiffView(styles config.Styles) *DiffView {
 	return &DiffView{
 		Base:       NewBase("diffview", styles),
-		style:      git.DiffStyleSideBySide,
 		prRenderer: NewPRSummaryRenderer(styles),
 	}
 }
+
+// SetPreview updates the preview content
+func (d *DiffView) SetPreview(preview PreviewContent) {
+	d.preview = preview
+	d.cursor = 0
+	if d.ready {
+		d.viewport.SetContent(d.renderPreview())
+		d.viewport.GotoTop()
+	}
+}
+
+// SetPR sets the PR info for inline comments and summaries
+func (d *DiffView) SetPR(pr *github.PRInfo) {
+	d.pr = pr
+	if d.ready && d.preview.Type != PreviewEmpty {
+		d.viewport.SetContent(d.renderPreview())
+	}
+}
+
 // GetSelectedLocation returns the file path and line number at cursor
 func (d *DiffView) GetSelectedLocation() (filePath string, lineNum int) {
 	if len(d.lineMap) == 0 {
-		return d.filePath, 1
+		return d.preview.FilePath, 1
 	}
-	// Calculate actual line index (viewport offset + cursor)
 	lineIdx := d.viewport.YOffset + d.cursor
 	if lineIdx >= len(d.lineMap) {
 		lineIdx = len(d.lineMap) - 1
@@ -58,170 +94,94 @@ func (d *DiffView) GetSelectedLocation() (filePath string, lineNum int) {
 	}
 	loc := d.lineMap[lineIdx]
 	if loc.filePath == "" {
-		return d.filePath, loc.lineNum
+		return d.preview.FilePath, loc.lineNum
 	}
 	return loc.filePath, loc.lineNum
 }
-// SetContent updates the diff content
-func (d *DiffView) SetContent(content string, filePath string) {
-	d.content = content
-	d.filePath = filePath
-	d.folderPath = ""
-	d.isRoot = false
-	d.commit = nil
-	d.cursor = 0
-	if d.ready {
-		styled := d.renderContent(content)
-		d.viewport.SetContent(styled)
-		d.viewport.GotoTop()
-	}
-}
 
-// SetCommitView shows commit details and PR summary
-func (d *DiffView) SetCommitView(commit *git.Commit, pr *github.PRInfo) {
-	d.content = ""
-	d.filePath = ""
-	d.folderPath = ""
-	d.isRoot = false
-	d.commit = commit
-	d.pr = pr
-	d.cursor = 0
-	if d.ready {
-		styled := d.renderCommitView()
-		d.viewport.SetContent(styled)
-		d.viewport.GotoTop()
-	}
-}
-// SetStyle updates the diff display style
-func (d *DiffView) SetStyle(style git.DiffStyle) {
-	d.style = style
-	if d.ready {
-		styled := d.renderContent(d.content)
-		d.viewport.SetContent(styled)
-	}
-}
-// SetPR sets the PR info for inline comments
-func (d *DiffView) SetPR(pr *github.PRInfo) {
-	d.pr = pr
-	// Re-render if we have content
-	if d.ready && d.content != "" {
-		d.viewport.SetContent(d.renderContent(d.content))
-	}
-}
-// SetFolderContent sets content for a folder or PR summary view
-func (d *DiffView) SetFolderContent(content string, folderPath string, isRoot bool, pr *github.PRInfo) {
-	d.content = content
-	d.filePath = ""
-	d.folderPath = folderPath
-	d.isRoot = isRoot
-	d.pr = pr
-	d.cursor = 0
-	if d.ready {
-		var styled string
-		if isRoot {
-			styled = d.renderPRSummary()
-		} else {
-			styled = d.renderContent(content)
-		}
-		d.viewport.SetContent(styled)
-		d.viewport.GotoTop()
-	}
-}
 // Update handles input
 func (d *DiffView) Update(msg tea.Msg) (Window, tea.Cmd) {
 	if !d.focused {
 		return d, nil
 	}
-	var cmd tea.Cmd
-	totalLines := len(d.lineMap)
-	if totalLines == 0 {
-		totalLines = 1
-	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, config.DefaultKeyMap.Down):
-			d.moveCursor(1, totalLines)
+			d.scrollDown(1)
 		case key.Matches(msg, config.DefaultKeyMap.Up):
-			d.moveCursor(-1, totalLines)
+			d.scrollUp(1)
 		case key.Matches(msg, config.DefaultKeyMap.FastDown):
-			d.moveCursor(5, totalLines)
+			d.scrollDown(5)
 		case key.Matches(msg, config.DefaultKeyMap.FastUp):
-			d.moveCursor(-5, totalLines)
+			d.scrollUp(5)
 		case key.Matches(msg, config.DefaultKeyMap.HalfPgDn):
-			d.moveCursor(d.viewport.Height/2, totalLines)
+			d.scrollDown(d.viewport.Height / 2)
 		case key.Matches(msg, config.DefaultKeyMap.HalfPgUp):
-			d.moveCursor(-d.viewport.Height/2, totalLines)
+			d.scrollUp(d.viewport.Height / 2)
 		case key.Matches(msg, config.DefaultKeyMap.GotoTop):
 			d.viewport.GotoTop()
 			d.cursor = 0
 		case key.Matches(msg, config.DefaultKeyMap.GotoBot):
 			d.viewport.GotoBottom()
-			d.cursor = min(d.viewport.Height-1, totalLines-1-d.viewport.YOffset)
-		default:
-			d.viewport, cmd = d.viewport.Update(msg)
+			d.cursor = min(d.viewport.Height-1, d.viewport.TotalLineCount()-1)
 		}
-	default:
-		d.viewport, cmd = d.viewport.Update(msg)
 	}
-	return d, cmd
+
+	return d, nil
 }
-func (d *DiffView) moveCursor(delta int, totalLines int) {
-	// Calculate absolute line position
-	absLine := d.viewport.YOffset + d.cursor + delta
-	// Clamp to valid range
-	if absLine < 0 {
-		absLine = 0
-	}
-	if absLine >= totalLines {
-		absLine = totalLines - 1
-	}
-	// Update cursor and viewport
-	if absLine < d.viewport.YOffset {
-		// Scroll up
-		d.viewport.SetYOffset(absLine)
-		d.cursor = 0
-	} else if absLine >= d.viewport.YOffset+d.viewport.Height {
-		// Scroll down
-		d.viewport.SetYOffset(absLine - d.viewport.Height + 1)
-		d.cursor = d.viewport.Height - 1
+
+func (d *DiffView) scrollDown(lines int) {
+	maxCursor := min(d.viewport.Height-1, d.viewport.TotalLineCount()-d.viewport.YOffset-1)
+	if d.cursor < maxCursor {
+		d.cursor = min(d.cursor+lines, maxCursor)
 	} else {
-		// Just move cursor within viewport
-		d.cursor = absLine - d.viewport.YOffset
+		d.viewport.LineDown(lines)
 	}
 }
+
+func (d *DiffView) scrollUp(lines int) {
+	if d.cursor > 0 {
+		d.cursor = max(d.cursor-lines, 0)
+	} else {
+		d.viewport.LineUp(lines)
+	}
+}
+
 // View renders the diff view
 func (d *DiffView) View(width, height int) string {
 	d.width = width
 	d.height = height
-	var style lipgloss.Style
+
+	style := d.styles.WindowUnfocused
 	if d.focused {
 		style = d.styles.WindowFocused
-	} else {
-		style = d.styles.WindowUnfocused
 	}
-	// Calculate content dimensions
-	contentWidth := width - 2   // borders
-	contentHeight := height - 2 // borders
+
+	contentWidth := width - 2
+	contentHeight := height - 2
 	if contentWidth < 1 || contentHeight < 1 {
 		return ""
 	}
+
 	// Initialize or resize viewport
 	if !d.ready {
-		d.viewport = viewport.New(contentWidth, contentHeight-1) // -1 for title
-		d.viewport.SetContent(d.getViewportContent())
+		d.viewport = viewport.New(contentWidth, contentHeight-1)
+		d.viewport.SetContent(d.renderPreview())
 		d.ready = true
 	} else if d.viewport.Width != contentWidth || d.viewport.Height != contentHeight-1 {
 		d.viewport.Width = contentWidth
 		d.viewport.Height = contentHeight - 1
-		// Re-render content when width changes
-		d.viewport.SetContent(d.getViewportContent())
+		d.viewport.SetContent(d.renderPreview())
 	}
-	// Build content
+
 	var lines []string
-	// Title with scroll position
+
+	// Title
 	titleText := d.getTitle()
-	hasContent := d.content != "" || d.isRoot || d.commit != nil
+	hasContent := d.preview.Type != PreviewEmpty
+
 	if hasContent {
 		scrollPos := d.formatScrollPos()
 		padding := max(0, contentWidth-len(titleText)-len(scrollPos)-4)
@@ -234,21 +194,18 @@ func (d *DiffView) View(width, height int) string {
 		titleText = d.styles.WindowTitle.Render(titleText)
 	}
 	lines = append(lines, titleText)
-	// Viewport content
+
+	// Content
 	if !hasContent {
-		emptyMsg := d.styles.Muted.Render("Select a file to view diff")
-		lines = append(lines, emptyMsg)
-		// Pad remaining lines
+		lines = append(lines, d.styles.Muted.Render("Select a file to view"))
 		for len(lines) < contentHeight {
 			lines = append(lines, "")
 		}
 	} else {
-		// Get viewport content and highlight cursor line
 		viewportContent := d.viewport.View()
 		if d.focused && len(d.lineMap) > 0 {
 			viewportLines := strings.Split(viewportContent, "\n")
 			if d.cursor >= 0 && d.cursor < len(viewportLines) {
-				// Highlight cursor line with reverse video
 				cursorStyle := lipgloss.NewStyle().Reverse(true)
 				viewportLines[d.cursor] = cursorStyle.Render(viewportLines[d.cursor])
 			}
@@ -256,96 +213,107 @@ func (d *DiffView) View(width, height int) string {
 		}
 		lines = append(lines, viewportContent)
 	}
+
 	content := strings.Join(lines, "\n")
-	return style.
-		Width(contentWidth).
-		Height(height - 2).
-		Render(content)
+	return style.Width(contentWidth).Height(height - 2).Render(content)
 }
-func (d *DiffView) formatScrollPos() string {
-	p := d.viewport.ScrollPercent() * 100
-	if p <= 0 {
-		return "top"
-	}
-	if p >= 100 {
-		return "bot"
-	}
-	return fmt.Sprintf("%d%%", int(p))
-}
+
 func (d *DiffView) getTitle() string {
-	if d.isRoot {
-		return "PR Summary"
+	switch d.preview.Type {
+	case PreviewFileDiff:
+		if d.preview.FilePath != "" {
+			return d.preview.FilePath
+		}
+		return "Diff"
+	case PreviewFolderDiff:
+		if d.preview.FolderPath != "" {
+			return d.preview.FolderPath + "/"
+		}
+		return "Folder Diff"
+	case PreviewFileContent:
+		if d.preview.FilePath != "" {
+			return d.preview.FilePath
+		}
+		return "File"
+	case PreviewCommitSummary:
+		return "Commit & PR Summary"
+	default:
+		return "Preview"
 	}
-	if d.folderPath != "" {
-		return d.folderPath + "/"
-	}
-	return "Diff"
-}
-// getViewportContent returns the appropriate content for the viewport
-func (d *DiffView) getViewportContent() string {
-	if d.commit != nil {
-		return d.renderCommitView()
-	}
-	if d.isRoot {
-		return d.renderPRSummary()
-	}
-	return d.renderContent(d.content)
 }
 
-func (d *DiffView) renderPRSummary() string {
-	d.lineMap = nil // No line navigation for PR summary
-	return d.prRenderer.Render(d.pr)
+func (d *DiffView) formatScrollPos() string {
+	if d.viewport.TotalLineCount() == 0 {
+		return ""
+	}
+	percent := 0
+	if d.viewport.TotalLineCount() > d.viewport.Height {
+		percent = (d.viewport.YOffset * 100) / (d.viewport.TotalLineCount() - d.viewport.Height)
+	}
+	return fmt.Sprintf("%d%%", percent)
 }
 
-func (d *DiffView) renderCommitView() string {
-	d.lineMap = nil // No line navigation for commit view
+func (d *DiffView) renderPreview() string {
+	switch d.preview.Type {
+	case PreviewCommitSummary:
+		return d.renderCommitSummary()
+	case PreviewFileDiff, PreviewFolderDiff:
+		return d.renderDiff(d.preview.Content)
+	case PreviewFileContent:
+		return d.renderFileContent(d.preview.Content)
+	default:
+		return ""
+	}
+}
+
+func (d *DiffView) renderCommitSummary() string {
+	d.lineMap = nil
 	var lines []string
 
 	// Commit details
-	if d.commit != nil {
+	if d.preview.Commit != nil {
+		c := d.preview.Commit
 		lines = append(lines, d.styles.DiffHeader.Render("Commit"))
 		lines = append(lines, d.styles.Muted.Render(strings.Repeat("─", 40)))
-		lines = append(lines, fmt.Sprintf("%s %s",
-			d.styles.Muted.Render("Hash:"),
-			d.commit.Hash,
-		))
-		lines = append(lines, fmt.Sprintf("%s %s",
-			d.styles.Muted.Render("Author:"),
-			d.commit.Author,
-		))
-		lines = append(lines, fmt.Sprintf("%s %s",
-			d.styles.Muted.Render("Date:"),
-			d.commit.Date,
-		))
+		lines = append(lines, fmt.Sprintf("%s %s", d.styles.Muted.Render("Hash:"), c.Hash))
+		lines = append(lines, fmt.Sprintf("%s %s", d.styles.Muted.Render("Author:"), c.Author))
+		lines = append(lines, fmt.Sprintf("%s %s", d.styles.Muted.Render("Date:"), c.Date))
 		lines = append(lines, "")
-		lines = append(lines, d.styles.ListItemSelected.Render(d.commit.Subject))
+		lines = append(lines, d.styles.ListItemSelected.Render(c.Subject))
 		lines = append(lines, "")
 		lines = append(lines, "")
 	}
 
-	// PR summary below
-	lines = append(lines, d.prRenderer.Render(d.pr))
+	// PR summary
+	pr := d.preview.PR
+	if pr == nil {
+		pr = d.pr
+	}
+	lines = append(lines, d.prRenderer.Render(pr))
 
 	return strings.Join(lines, "\n")
 }
-func (d *DiffView) renderContent(content string) string {
+
+func (d *DiffView) renderDiff(content string) string {
 	if content == "" {
-		return ""
+		d.lineMap = nil
+		return d.styles.Muted.Render("No changes")
 	}
-	// Check if content is a diff or plain file
-	isDiff := d.isDiffContent(content)
-	if d.style == git.DiffStyleSideBySide {
-		if isDiff {
-			return d.renderSideBySide(content)
-		}
-		return d.renderFileWithLineNumbers(content)
+
+	if d.isDiffContent(content) {
+		return d.renderSideBySide(content)
 	}
-	if isDiff {
-		return d.styleUnifiedDiff(content)
-	}
-	return d.renderPlainFile(content)
+	return d.renderFileWithLineNumbers(content)
 }
-// isDiffContent checks if content looks like a git diff
+
+func (d *DiffView) renderFileContent(content string) string {
+	if content == "" {
+		d.lineMap = nil
+		return d.styles.Muted.Render("Empty file")
+	}
+	return d.renderFileWithLineNumbers(content)
+}
+
 func (d *DiffView) isDiffContent(content string) bool {
 	lines := strings.SplitN(content, "\n", 5)
 	for _, line := range lines {
@@ -358,384 +326,139 @@ func (d *DiffView) isDiffContent(content string) bool {
 	}
 	return false
 }
-// renderPlainFile renders file content without line numbers (unified style)
-func (d *DiffView) renderPlainFile(content string) string {
-	var styled []string
-	var lineMap []lineLocation
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		styled = append(styled, d.styles.DiffContext.Render(line))
-		lineMap = append(lineMap, lineLocation{filePath: d.filePath, lineNum: i + 1})
-	}
-	d.lineMap = lineMap
-	return strings.Join(styled, "\n")
-}
-// renderFileWithLineNumbers renders file content with line numbers (split style)
+
 func (d *DiffView) renderFileWithLineNumbers(content string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	var lineMap []lineLocation
-	// Calculate line number width based on total lines
+
 	numWidth := len(fmt.Sprintf("%d", len(lines)))
-	if numWidth < 4 {
-		numWidth = 4
-	}
+	numStyle := d.styles.Muted
+
 	for i, line := range lines {
 		lineNum := i + 1
 		numStr := fmt.Sprintf("%*d", numWidth, lineNum)
-		// Handle tabs
-		line = strings.ReplaceAll(line, "\t", "    ")
-		// Truncate if needed
-		maxWidth := d.viewport.Width - numWidth - 2 // -2 for " │"
-		if maxWidth > 0 && len([]rune(line)) > maxWidth {
-			runes := []rune(line)
-			line = string(runes[:maxWidth-1]) + "…"
-		}
-		styledNum := d.styles.Muted.Render(numStr + " │")
-		styledLine := d.styles.DiffContext.Render(line)
-		result = append(result, styledNum+styledLine)
-		lineMap = append(lineMap, lineLocation{filePath: d.filePath, lineNum: lineNum})
+
+		// Expand tabs
+		expanded := strings.ReplaceAll(line, "\t", strings.Repeat(" ", config.DiffTabWidth))
+
+		result = append(result, fmt.Sprintf("%s │ %s", numStyle.Render(numStr), expanded))
+		lineMap = append(lineMap, lineLocation{filePath: d.preview.FilePath, lineNum: lineNum})
 	}
+
 	d.lineMap = lineMap
 	return strings.Join(result, "\n")
 }
-func (d *DiffView) styleUnifiedDiff(content string) string {
-	if content == "" {
-		d.lineMap = nil
-		return ""
-	}
-	// Build a map of comments by line number (per file)
-	commentsByFile := make(map[string]map[int][]github.LineComment)
-	if d.pr != nil {
-		for filePath, comments := range d.pr.FileComments {
-			commentsByFile[filePath] = make(map[int][]github.LineComment)
-			for _, c := range comments {
-				commentsByFile[filePath][c.Line] = append(commentsByFile[filePath][c.Line], c)
-			}
-		}
-	}
-	var styled []string
-	var lineMap []lineLocation
-	lines := strings.Split(content, "\n")
-	var newLineNum int
-	var currentFile string
-	// Use d.filePath if set (single file view)
-	if d.filePath != "" {
-		currentFile = d.filePath
-	}
-	for _, line := range lines {
-		var styledLine string
-		var loc lineLocation
-		// Track current file from diff headers
-		if strings.HasPrefix(line, "diff --git") {
-			// Extract file path: "diff --git a/path b/path" -> "path"
-			parts := strings.Split(line, " b/")
-			if len(parts) == 2 {
-				currentFile = parts[1]
-			}
-			// Skip diff header lines
-			continue
-		} else if strings.HasPrefix(line, "@@") {
-			_, newLineNum = parseHunkHeader(line)
-			newLineNum-- // Will be incremented below
-			// Skip hunk headers
-			continue
-		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			newLineNum++
-			styledLine = d.styles.DiffAdded.Render(line)
-			loc = lineLocation{filePath: currentFile, lineNum: newLineNum}
-		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-			styledLine = d.styles.DiffRemoved.Render(line)
-			// Removed lines don't have a new line number, use previous
-			loc = lineLocation{filePath: currentFile, lineNum: newLineNum}
-		} else if strings.HasPrefix(line, "index ") ||
-			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
-			// Skip metadata lines
-			continue
-		} else {
-			newLineNum++
-			styledLine = d.styles.DiffContext.Render(line)
-			loc = lineLocation{filePath: currentFile, lineNum: newLineNum}
-		}
-		styled = append(styled, styledLine)
-		lineMap = append(lineMap, loc)
-		// Add comments for this line (only once per line)
-		if newLineNum > 0 && currentFile != "" {
-			if fileComments, ok := commentsByFile[currentFile]; ok {
-				if comments, ok := fileComments[newLineNum]; ok {
-					for _, c := range comments {
-						commentLines := d.renderComment(c)
-						styled = append(styled, commentLines...)
-						// Add lineMap entries for comment lines
-						for range commentLines {
-							lineMap = append(lineMap, loc)
-						}
-					}
-					delete(fileComments, newLineNum) // Remove so we don't render again
-				}
-			}
-		}
-	}
-	d.lineMap = lineMap
-	return strings.Join(styled, "\n")
-}
-// renderComment formats a PR comment for display in the diff
-func (d *DiffView) renderComment(c github.LineComment) []string {
-	var lines []string
-	width := d.viewport.Width - 6 // Account for prefix
-	if width < 20 {
-		width = 60
-	}
-	// Author header
-	header := fmt.Sprintf("   ┌─ %s", c.Author)
-	lines = append(lines, d.styles.DiffHeader.Render(header))
-	// Comment body - wrap long lines
-	bodyLines := strings.Split(c.Body, "\n")
-	for _, bl := range bodyLines {
-		bl = strings.TrimSpace(bl)
-		if bl == "" {
-			lines = append(lines, d.styles.Muted.Render("   │"))
-			continue
-		}
-		// Word wrap
-		wrapped := wrapText(bl, width)
-		for _, w := range wrapped {
-			lines = append(lines, d.styles.Muted.Render("   │ "+w))
-		}
-	}
-	// Footer
-	lines = append(lines, d.styles.DiffHeader.Render("   └─"))
-	return lines
-}
-// wrapText wraps text to the specified width
-func wrapText(text string, width int) []string {
-	if width <= 0 {
-		return []string{text}
-	}
-	var lines []string
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{}
-	}
-	current := words[0]
-	for _, word := range words[1:] {
-		if len(current)+1+len(word) <= width {
-			current += " " + word
-		} else {
-			lines = append(lines, current)
-			current = word
-		}
-	}
-	if current != "" {
-		lines = append(lines, current)
-	}
-	return lines
-}
-// diffLine represents a line in the side-by-side view
-type diffLine struct {
-	leftNum   int
-	leftText  string
-	leftType  lineType
-	rightNum  int
-	rightText string
-	rightType lineType
-}
-type lineType int
-const (
-	lineContext lineType = iota
-	lineAdded
-	lineRemoved
-	lineEmpty
-)
+
 func (d *DiffView) renderSideBySide(content string) string {
-	// Minimum width for side-by-side view
-	minWidth := 60
-	if d.viewport.Width < minWidth {
-		// Fall back to unified view if too narrow
-		return d.styleUnifiedDiff(content)
-	}
-	// Build comments map by line number (per file for folder view)
-	commentsByFile := make(map[string]map[int][]github.LineComment)
-	if d.pr != nil {
-		for filePath, comments := range d.pr.FileComments {
-			commentsByFile[filePath] = make(map[int][]github.LineComment)
-			for _, c := range comments {
-				commentsByFile[filePath][c.Line] = append(commentsByFile[filePath][c.Line], c)
-			}
-		}
-	}
 	lines := strings.Split(content, "\n")
 	var result []string
 	var lineMap []lineLocation
-	var currentFile string
-	if d.filePath != "" {
-		currentFile = d.filePath
+
+	paneWidth := (d.width - 2 - 3) / 2 // -2 for borders, -3 for separator
+	if paneWidth < config.DiffPaneMinWidth {
+		paneWidth = config.DiffPaneMinWidth
 	}
-	// Calculate pane width (half of available space minus separator)
-	paneWidth := (d.viewport.Width - 3) / 2 // 3 for " │ " separator
-	if paneWidth < 20 {
-		paneWidth = 20
-	}
-	// Number column width
-	numWidth := 4
-	// Process the diff
+	numWidth := config.DiffLineNumWidth
+
 	var leftNum, rightNum int
-	var i int
-	for i < len(lines) {
-		line := lines[i]
-		// Track file from diff header
+	var currentFile string
+
+	for _, line := range lines {
+		// Track file headers
 		if strings.HasPrefix(line, "diff --git") {
-			parts := strings.Split(line, " b/")
-			if len(parts) == 2 {
-				currentFile = parts[1]
+			parts := strings.Split(line, " ")
+			if len(parts) >= 4 {
+				currentFile = strings.TrimPrefix(parts[2], "a/")
 			}
-			i++
+			header := d.styles.DiffHeader.Render(line)
+			result = append(result, header)
+			lineMap = append(lineMap, lineLocation{})
 			continue
 		}
-		// Header lines (index, ---, +++)
-		if strings.HasPrefix(line, "index ") ||
-			strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
-			i++
-			continue
-		}
-		// Hunk header - parse but don't display
+
+		// Handle hunk headers
 		if strings.HasPrefix(line, "@@") {
-			leftNum, rightNum = parseHunkHeader(line)
-			i++
+			leftNum, rightNum = d.parseHunkHeader(line)
+			header := d.styles.DiffHeader.Render(line)
+			result = append(result, header)
+			lineMap = append(lineMap, lineLocation{})
 			continue
 		}
-		// Context line
-		if len(line) == 0 || (len(line) > 0 && line[0] != '+' && line[0] != '-') {
-			text := line
-			if len(text) > 0 {
-				text = text[1:]
-			}
-			left := d.formatSideLine(leftNum, text, lineContext, numWidth, paneWidth)
-			right := d.formatSideLine(rightNum, text, lineContext, numWidth, paneWidth)
-			result = append(result, left+d.styles.Muted.Render(" │ ")+right)
-			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: rightNum})
-			// Add comments for this line
-			if currentFile != "" {
-				if fileComments, ok := commentsByFile[currentFile]; ok {
-					if comments, ok := fileComments[rightNum]; ok {
-						for _, c := range comments {
-							commentLines := d.renderComment(c)
-							result = append(result, commentLines...)
-							for range commentLines {
-								lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: rightNum})
-							}
-						}
-						delete(fileComments, rightNum)
-					}
-				}
-			}
+
+		// Skip other headers
+		if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") ||
+			strings.HasPrefix(line, "index ") || strings.HasPrefix(line, "new file") ||
+			strings.HasPrefix(line, "deleted file") {
+			result = append(result, d.styles.Muted.Render(line))
+			lineMap = append(lineMap, lineLocation{})
+			continue
+		}
+
+		// Render diff lines
+		var left, right string
+		var loc lineLocation
+
+		if strings.HasPrefix(line, "-") {
+			left = d.formatSideLine(leftNum, line[1:], d.styles.DiffRemoved, numWidth, paneWidth)
+			right = strings.Repeat(" ", paneWidth)
+			loc = lineLocation{filePath: currentFile, lineNum: leftNum}
+			leftNum++
+		} else if strings.HasPrefix(line, "+") {
+			left = strings.Repeat(" ", paneWidth)
+			right = d.formatSideLine(rightNum, line[1:], d.styles.DiffAdded, numWidth, paneWidth)
+			loc = lineLocation{filePath: currentFile, lineNum: rightNum}
+			rightNum++
+		} else if strings.HasPrefix(line, " ") {
+			left = d.formatSideLine(leftNum, line[1:], d.styles.DiffContext, numWidth, paneWidth)
+			right = d.formatSideLine(rightNum, line[1:], d.styles.DiffContext, numWidth, paneWidth)
+			loc = lineLocation{filePath: currentFile, lineNum: rightNum}
 			leftNum++
 			rightNum++
-			i++
+		} else {
+			result = append(result, line)
+			lineMap = append(lineMap, lineLocation{})
 			continue
 		}
-		// Collect consecutive - and + lines for pairing
-		var removals []string
-		var additions []string
-		for i < len(lines) && len(lines[i]) > 0 && lines[i][0] == '-' && !strings.HasPrefix(lines[i], "---") {
-			removals = append(removals, lines[i][1:])
-			i++
-		}
-		for i < len(lines) && len(lines[i]) > 0 && lines[i][0] == '+' && !strings.HasPrefix(lines[i], "+++") {
-			additions = append(additions, lines[i][1:])
-			i++
-		}
-		// Pair up removals and additions
-		maxLen := max(len(removals), len(additions))
-		for j := 0; j < maxLen; j++ {
-			var left, right string
-			var currentRightNum int
-			if j < len(removals) {
-				left = d.formatSideLine(leftNum, removals[j], lineRemoved, numWidth, paneWidth)
-				leftNum++
-			} else {
-				left = d.formatSideLine(0, "", lineEmpty, numWidth, paneWidth)
-			}
-			if j < len(additions) {
-				currentRightNum = rightNum
-				right = d.formatSideLine(rightNum, additions[j], lineAdded, numWidth, paneWidth)
-				rightNum++
-			} else {
-				right = d.formatSideLine(0, "", lineEmpty, numWidth, paneWidth)
-			}
-			result = append(result, left+d.styles.Muted.Render(" │ ")+right)
-			lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: max(currentRightNum, leftNum-1)})
-			// Add comments for the new line
-			if currentRightNum > 0 && currentFile != "" {
-				if fileComments, ok := commentsByFile[currentFile]; ok {
-					if comments, ok := fileComments[currentRightNum]; ok {
-						for _, c := range comments {
-							commentLines := d.renderComment(c)
-							result = append(result, commentLines...)
-							for range commentLines {
-								lineMap = append(lineMap, lineLocation{filePath: currentFile, lineNum: currentRightNum})
-							}
-						}
-						delete(fileComments, currentRightNum)
-					}
-				}
-			}
-		}
+
+		result = append(result, left+" │ "+right)
+		lineMap = append(lineMap, loc)
 	}
+
 	d.lineMap = lineMap
 	return strings.Join(result, "\n")
 }
-func (d *DiffView) formatSideLine(num int, text string, lt lineType, numWidth, paneWidth int) string {
-	// Format: "1234 text..."
-	textWidth := paneWidth - numWidth - 1 // -1 for space after number
-	var numStr string
-	if num > 0 {
-		numStr = fmt.Sprintf("%*d", numWidth, num)
-	} else {
+
+func (d *DiffView) parseHunkHeader(line string) (int, int) {
+	// Parse @@ -start,count +start,count @@
+	var leftStart, rightStart int
+	fmt.Sscanf(line, "@@ -%d", &leftStart)
+	if idx := strings.Index(line, "+"); idx != -1 {
+		fmt.Sscanf(line[idx:], "+%d", &rightStart)
+	}
+	return leftStart, rightStart
+}
+
+func (d *DiffView) formatSideLine(num int, content string, style lipgloss.Style, numWidth, paneWidth int) string {
+	numStr := fmt.Sprintf("%*d", numWidth, num)
+	if num == 0 {
 		numStr = strings.Repeat(" ", numWidth)
 	}
-	// Truncate or pad text
-	displayText := truncateOrPad(text, textWidth)
-	fullLine := numStr + " " + displayText
-	switch lt {
-	case lineAdded:
-		return d.styles.DiffAdded.Render(fullLine)
-	case lineRemoved:
-		return d.styles.DiffRemoved.Render(fullLine)
-	case lineEmpty:
-		return d.styles.Muted.Render(fullLine)
-	default:
-		return d.styles.DiffContext.Render(fullLine)
+
+	// Expand tabs
+	content = strings.ReplaceAll(content, "\t", strings.Repeat(" ", config.DiffTabWidth))
+
+	// Truncate if needed
+	contentWidth := paneWidth - numWidth - 2
+	if len(content) > contentWidth {
+		content = content[:contentWidth-1] + "…"
 	}
-}
-func parseHunkHeader(line string) (oldStart, newStart int) {
-	// Parse @@ -10,6 +10,8 @@ format
-	// Returns starting line numbers for old and new
-	oldStart, newStart = 1, 1
-	parts := strings.Split(line, " ")
-	for _, p := range parts {
-		if strings.HasPrefix(p, "-") && len(p) > 1 {
-			fmt.Sscanf(p, "-%d", &oldStart)
-		}
-		if strings.HasPrefix(p, "+") && len(p) > 1 {
-			fmt.Sscanf(p, "+%d", &newStart)
-		}
+
+	// Pad to width
+	padding := contentWidth - len(content)
+	if padding > 0 {
+		content += strings.Repeat(" ", padding)
 	}
-	return oldStart, newStart
-}
-func truncateOrPad(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	// Handle tabs by converting to spaces
-	s = strings.ReplaceAll(s, "\t", "    ")
-	runeCount := len([]rune(s))
-	if runeCount > width {
-		runes := []rune(s)
-		if width > 1 {
-			return string(runes[:width-1]) + "…"
-		}
-		return string(runes[:width])
-	}
-	return s + strings.Repeat(" ", width-runeCount)
+
+	return d.styles.Muted.Render(numStr) + " " + style.Render(content)
 }

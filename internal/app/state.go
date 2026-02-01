@@ -8,29 +8,31 @@ import (
 
 // State holds the shared application state
 type State struct {
-	// Selection
-	SelectedFile   string
-	SelectedIndex  int
-	SelectedFolder string   // non-empty when folder selected
-	FolderChildren []string // file paths in selected folder
-	IsRootSelected bool     // true when root is selected (PR summary)
-	DiffMode     git.DiffMode
-	FileViewMode git.FileViewMode
+	// Mode and selection
+	Mode      AppMode
+	Selection Selection
 
-	// Data
-	Files       []git.FileStatus
-	Diff        string
-	Branch      string
-	BaseBranch  string
+	// File list data
+	Files         []git.FileStatus
+	SelectedIndex int
+
+	// Cached content
+	DiffContent string
+
+	// Branch info
+	Branch     string
+	BaseBranch string
+
+	// Stats
 	DiffAdded   int
 	DiffRemoved int
 
-	// UI
+	// UI state
 	FocusedWindow string
-	ActiveModal   string // empty if no modal
+	ActiveModal   string
 
 	// PR data
-	PR *github.PRInfo // Current PR info (nil if no PR)
+	PR *github.PRInfo
 
 	// Errors
 	Error string
@@ -39,46 +41,28 @@ type State struct {
 // NewState creates a new state with defaults
 func NewState() *State {
 	return &State{
-		DiffMode:      git.DiffModeBranch,
+		Mode:          ModeChangedBranch,
 		FocusedWindow: config.WindowFileList,
 	}
 }
 
-// SelectFile updates the selected file
-func (s *State) SelectFile(index int) {
-	s.SelectedIndex = index
-	if index >= 0 && index < len(s.Files) {
-		s.SelectedFile = s.Files[index].Path
-	} else {
-		s.SelectedFile = ""
-	}
-}
-
-// SetDiffMode changes the diff mode and resets selection
-func (s *State) SetDiffMode(mode git.DiffMode) {
-	s.DiffMode = mode
-	s.SelectedFile = ""
+// SetMode changes the app mode and resets selection
+func (s *State) SetMode(mode AppMode) {
+	s.Mode = mode
+	s.Selection.Clear()
 	s.SelectedIndex = 0
 }
 
-// SetFileViewMode sets the file view mode and resets selection
-func (s *State) SetFileViewMode(mode git.FileViewMode) {
-	s.FileViewMode = mode
-	s.SelectedFile = ""
-	s.SelectedIndex = 0
+// CycleMode advances to the next mode
+func (s *State) CycleMode() {
+	s.SetMode(s.Mode.Next())
 }
 
 // SetFiles updates the file list
 func (s *State) SetFiles(files []git.FileStatus) {
 	s.Files = files
-	// Reset selection if out of bounds (SelectedIndex can be -1 for folders)
-	if s.SelectedIndex < 0 || s.SelectedIndex >= len(files) {
+	if s.SelectedIndex >= len(files) {
 		s.SelectedIndex = 0
-	}
-	if len(files) > 0 && s.SelectedIndex >= 0 && s.SelectedIndex < len(files) {
-		s.SelectedFile = files[s.SelectedIndex].Path
-	} else {
-		s.SelectedFile = ""
 	}
 }
 
@@ -94,11 +78,6 @@ func (s *State) ToggleModal(name string) {
 // CloseModal closes any open modal
 func (s *State) CloseModal() {
 	s.ActiveModal = ""
-}
-
-// FocusWindow sets the focused window
-func (s *State) FocusWindow(name string) {
-	s.FocusedWindow = name
 }
 
 // CycleWindow cycles focus to the next window
