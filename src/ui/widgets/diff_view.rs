@@ -1,6 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, StatefulWidget, Widget},
 };
@@ -8,6 +9,7 @@ use ratatui::{
 use crate::config::Colors;
 use crate::git::Commit;
 use crate::github::PrInfo;
+use crate::ui::Highlighter;
 
 /// What to show in the diff view
 #[derive(Debug, Clone)]
@@ -38,7 +40,6 @@ impl Default for PreviewContent {
 }
 
 /// Diff view widget state
-#[derive(Debug, Default)]
 pub struct DiffViewState {
     pub content: PreviewContent,
     pub lines: Vec<DiffLine>,
@@ -46,6 +47,22 @@ pub struct DiffViewState {
     pub offset: usize,
     pub pr: Option<PrInfo>,
     current_file: String,
+    /// Syntax-highlighted lines for FileContent mode
+    highlighted_lines: Vec<Vec<(String, Style)>>,
+}
+
+impl Default for DiffViewState {
+    fn default() -> Self {
+        Self {
+            content: PreviewContent::default(),
+            lines: Vec::new(),
+            cursor: 0,
+            offset: 0,
+            pr: None,
+            current_file: String::new(),
+            highlighted_lines: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -74,12 +91,29 @@ impl DiffViewState {
     }
 
     pub fn set_content(&mut self, content: PreviewContent) {
+        self.set_content_with_highlighter(content, None);
+    }
+
+    pub fn set_content_highlighted(&mut self, content: PreviewContent, highlighter: &Highlighter) {
+        self.set_content_with_highlighter(content, Some(highlighter));
+    }
+
+    fn set_content_with_highlighter(&mut self, content: PreviewContent, highlighter: Option<&Highlighter>) {
         // Store current file path for comment lookup
         self.current_file = match &content {
             PreviewContent::FileDiff { path, .. } => path.clone(),
             PreviewContent::FileContent { path, .. } => path.clone(),
             _ => String::new(),
         };
+
+        // Highlight file content if highlighter provided
+        self.highlighted_lines = match (&content, highlighter) {
+            (PreviewContent::FileContent { path, content }, Some(h)) => {
+                h.highlight_file(content, path)
+            }
+            _ => Vec::new(),
+        };
+
         self.content = content;
         self.cursor = 0;
         self.offset = 0;
@@ -512,14 +546,70 @@ impl<'a> StatefulWidget for DiffView<'a> {
             .collect();
 
         let pane_width = ((inner.width as usize).saturating_sub(3)) / 2; // -3 for separator
+        let has_highlighting = !state.highlighted_lines.is_empty();
 
         for (i, (idx, diff_line)) in visible_lines.into_iter().enumerate() {
             let y = inner.y + i as u16;
             let is_cursor = self.focused && idx == state.cursor;
-            let line = render_diff_line(diff_line, is_cursor, self.colors, pane_width);
+
+            let line = if has_highlighting && diff_line.left_num.is_some() {
+                // Use syntax highlighting for file content
+                let line_idx = diff_line.left_num.unwrap().saturating_sub(1);
+                render_highlighted_line(
+                    diff_line,
+                    state.highlighted_lines.get(line_idx),
+                    is_cursor,
+                    self.colors,
+                )
+            } else {
+                render_diff_line(diff_line, is_cursor, self.colors, pane_width)
+            };
+
             buf.set_line(inner.x, y, &line, inner.width);
         }
     }
+}
+
+fn render_highlighted_line(
+    diff_line: &DiffLine,
+    highlighted: Option<&Vec<(String, Style)>>,
+    cursor: bool,
+    colors: &Colors,
+) -> Line<'static> {
+    let mut spans = vec![];
+    let num_width = 4;
+
+    // Line number
+    let num_str = diff_line.left_num
+        .map(|n| format!("{:>width$}", n, width = num_width))
+        .unwrap_or_else(|| " ".repeat(num_width));
+
+    spans.push(Span::styled(num_str, colors.style_muted()));
+    spans.push(Span::styled(" │ ", colors.style_muted()));
+
+    // Highlighted content or fallback to plain text
+    if let Some(styled_spans) = highlighted {
+        for (text, style) in styled_spans {
+            let final_style = if cursor {
+                style.add_modifier(ratatui::style::Modifier::REVERSED)
+            } else {
+                *style
+            };
+            spans.push(Span::styled(text.clone(), final_style));
+        }
+    } else {
+        let text = diff_line.left_text.as_deref().unwrap_or("");
+        let style = if cursor {
+            ratatui::style::Style::default()
+                .fg(colors.text)
+                .add_modifier(ratatui::style::Modifier::REVERSED)
+        } else {
+            ratatui::style::Style::default().fg(colors.text)
+        };
+        spans.push(Span::styled(text.to_string(), style));
+    }
+
+    Line::from(spans)
 }
 
 fn render_diff_line(diff_line: &DiffLine, cursor: bool, colors: &Colors, pane_width: usize) -> Line<'static> {

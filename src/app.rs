@@ -16,7 +16,7 @@ use crate::git::{AppMode, Commit, DiffStats, GitClient, StatusEntry};
 use crate::github::{GitHubClient, PrInfo};
 use crate::ui::{
     centered_rect, AppLayout, CommitList, CommitListState, DiffView, DiffViewState, FileList,
-    FileListState, HelpModal, PreviewContent,
+    FileListState, HelpModal, Highlighter, PreviewContent,
 };
 
 /// Which window is focused
@@ -84,6 +84,9 @@ pub struct App {
     pub file_list_state: FileListState,
     pub commit_list_state: CommitListState,
     pub diff_view_state: DiffViewState,
+
+    // Syntax highlighting
+    highlighter: Highlighter,
 }
 
 impl App {
@@ -118,6 +121,7 @@ impl App {
             file_list_state: FileListState::new(),
             commit_list_state: CommitListState::new(),
             diff_view_state: DiffViewState::new(),
+            highlighter: Highlighter::new(),
         };
 
         app.refresh()?;
@@ -488,12 +492,14 @@ impl App {
                     content: diff,
                 }
             } else if self.mode == AppMode::Browse || self.mode == AppMode::Docs {
-                // Browse/docs mode - file content
-                let content = self.git.read_file(&entry.path).unwrap_or_default();
-                PreviewContent::FileContent {
+                // Browse/docs mode - file content with syntax highlighting
+                let file_content = self.git.read_file(&entry.path).unwrap_or_default();
+                let content = PreviewContent::FileContent {
                     path: entry.path.clone(),
-                    content,
-                }
+                    content: file_content,
+                };
+                self.diff_view_state.set_content_highlighted(content, &self.highlighter);
+                return;
             } else {
                 // Changed mode - diff
                 let diff = self
