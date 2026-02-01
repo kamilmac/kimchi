@@ -224,9 +224,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case key.Matches(msg, keys.DefaultKeyMap.Yank):
-			if a.state.SelectedFile != "" {
-				if err := clipboard.WriteAll(a.state.SelectedFile); err == nil {
-					a.statusMessage = fmt.Sprintf("Copied: %s", a.state.SelectedFile)
+			var toCopy string
+			if a.state.FocusedWindow == "diffview" {
+				filePath, lineNum := a.diffView.GetSelectedLocation()
+				if filePath != "" && lineNum > 0 {
+					toCopy = fmt.Sprintf("%s:%d", filePath, lineNum)
+				} else if filePath != "" {
+					toCopy = filePath
+				}
+			} else if a.state.SelectedFile != "" {
+				toCopy = a.state.SelectedFile
+			}
+			if toCopy != "" {
+				if err := clipboard.WriteAll(toCopy); err == nil {
+					a.statusMessage = fmt.Sprintf("Copied: %s", toCopy)
 				}
 			}
 			return a, nil
