@@ -29,10 +29,9 @@ type App struct {
 	styles ui.Styles
 
 	// Windows
-	fileList   *window.FileList
-	diffView   *window.DiffView
-	commitList *window.CommitList
-	help       *window.Help
+	fileList *window.FileList
+	diffView *window.DiffView
+	help     *window.Help
 
 	// Window registry
 	windows     map[string]window.Window
@@ -58,7 +57,6 @@ func New(gitClient git.Client) *App {
 	// Create windows
 	fileList := window.NewFileList(styles)
 	diffView := window.NewDiffView(styles)
-	commitList := window.NewCommitList(styles)
 	help := window.NewHelp(styles)
 
 	// Set initial focus
@@ -66,22 +64,19 @@ func New(gitClient git.Client) *App {
 
 	// Create window registry
 	windows := map[string]window.Window{
-		"filelist":   fileList,
-		"diffview":   diffView,
-		"commitlist": commitList,
-		"help":       help,
+		"filelist": fileList,
+		"diffview": diffView,
+		"help":     help,
 	}
 
 	// Default assignments for different layouts
 	assignments := map[string]string{
-		// ThreeSlot layout
-		"left-top":    "filelist",
-		"left-bottom": "commitlist",
-		"right":       "diffview",
-		// StackedThree layout
+		// TwoColumn layout
+		"left":  "filelist",
+		"right": "diffview",
+		// Stacked layout
 		"top":    "filelist",
-		"middle": "diffview",
-		"bottom": "commitlist",
+		"bottom": "diffview",
 	}
 
 	app := &App{
@@ -92,7 +87,6 @@ func New(gitClient git.Client) *App {
 		styles:      styles,
 		fileList:    fileList,
 		diffView:    diffView,
-		commitList:  commitList,
 		help:        help,
 		windows:     windows,
 		assignments: assignments,
@@ -144,7 +138,6 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		a.loadBranchInfo(),
 		a.loadFiles(),
-		a.loadCommits(),
 		a.loadPR(),
 	)
 }
@@ -176,7 +169,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case key.Matches(msg, keys.DefaultKeyMap.Refresh):
-			return a, tea.Batch(a.loadFiles(), a.loadCommits(), a.loadDiffStats())
+			return a, tea.Batch(a.loadFiles(), a.loadDiffStats())
 
 		case key.Matches(msg, keys.DefaultKeyMap.ModeWorking):
 			a.state.SetDiffMode(git.DiffModeWorking)
@@ -265,11 +258,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.diffView.SetContent(msg.Content, a.state.SelectedFile)
 		return a, nil
 
-	case CommitsLoadedMsg:
-		a.state.Commits = msg.Commits
-		a.commitList.SetCommits(msg.Commits)
-		return a, nil
-
 	case BranchInfoMsg:
 		a.state.Branch = msg.Branch
 		a.state.BaseBranch = msg.BaseBranch
@@ -286,7 +274,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case GitChangedMsg:
 		// File system changed, refresh data
-		return a, tea.Batch(a.loadBranchInfo(), a.loadFiles(), a.loadDiff(), a.loadCommits(), a.loadDiffStats())
+		return a, tea.Batch(a.loadBranchInfo(), a.loadFiles(), a.loadDiff(), a.loadDiffStats())
 
 	case PRLoadedMsg:
 		if msg.Err != nil {
@@ -335,17 +323,13 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var w window.Window
 		w, cmd = a.diffView.Update(msg)
 		a.diffView = w.(*window.DiffView)
-	case "commitlist":
-		var w window.Window
-		w, cmd = a.commitList.Update(msg)
-		a.commitList = w.(*window.CommitList)
 	}
 
 	return a, cmd
 }
 
 func (a *App) cycleFocus(reverse bool) {
-	windowOrder := []string{"filelist", "diffview", "commitlist"}
+	windowOrder := []string{"filelist", "diffview"}
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
 }
@@ -361,7 +345,6 @@ func (a *App) focusPrev() {
 func (a *App) updateFocus() {
 	a.fileList.SetFocus(a.state.FocusedWindow == "filelist")
 	a.diffView.SetFocus(a.state.FocusedWindow == "diffview")
-	a.commitList.SetFocus(a.state.FocusedWindow == "commitlist")
 }
 
 // View renders the application
@@ -523,16 +506,6 @@ func (a *App) loadDiff() tea.Cmd {
 			return ErrorMsg{Err: err}
 		}
 		return DiffLoadedMsg{Content: content}
-	}
-}
-
-func (a *App) loadCommits() tea.Cmd {
-	return func() tea.Msg {
-		commits, err := a.git.Log()
-		if err != nil {
-			return ErrorMsg{Err: err}
-		}
-		return CommitsLoadedMsg{Commits: commits}
 	}
 }
 

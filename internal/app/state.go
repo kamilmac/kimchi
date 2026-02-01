@@ -20,7 +20,6 @@ type State struct {
 	// Data
 	Files       []git.FileStatus
 	Diff        string
-	Commits     []git.Commit
 	Branch      string
 	BaseBranch  string
 	DiffAdded   int

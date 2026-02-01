@@ -96,11 +96,10 @@ type ResponsiveConfig struct {
 }
 
 // DefaultResponsive is the default responsive configuration
-// CommitList is always visible
 var DefaultResponsive = ResponsiveConfig{
 	Breakpoints: []Breakpoint{
-		{MinWidth: 80, Layout: ThreeSlot},
-		{MinWidth: 0, Layout: StackedThree},
+		{MinWidth: 80, Layout: TwoColumn},
+		{MinWidth: 0, Layout: Stacked},
 	},
 }
 

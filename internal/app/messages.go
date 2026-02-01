@@ -26,11 +26,6 @@ type DiffLoadedMsg struct {
 	Content string
 }
 
-// CommitsLoadedMsg is sent when commits are loaded
-type CommitsLoadedMsg struct {
-	Commits []git.Commit
-}
-
 // BranchInfoMsg is sent with branch information
 type BranchInfoMsg struct {
 	Branch     string
