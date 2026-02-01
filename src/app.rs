@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 use crate::config::Config;
 use crate::event::KeyInput;
 use crate::git::{AppMode, Commit, DiffStats, GitClient, StatusEntry};
-use crate::github::{GitHubClient, PrInfo};
+use crate::github::{GitHubClient, PrInfo, PrSummary};
 use crate::ui::{
     centered_rect, AppLayout, CommitList, CommitListState, DiffView, DiffViewState, FileList,
-    FileListState, HelpModal, Highlighter, PreviewContent,
+    FileListState, HelpModal, Highlighter, PrListModal, PrListState, PreviewContent,
 };
 
 /// Which window is focused
@@ -65,6 +65,7 @@ pub struct App {
     pub mode: AppMode,
     pub focused: FocusedWindow,
     pub show_help: bool,
+    pub show_pr_list: bool,
     pub pending_command: AppCommand,
 
     // Data
@@ -84,6 +85,8 @@ pub struct App {
     pub file_list_state: FileListState,
     pub commit_list_state: CommitListState,
     pub diff_view_state: DiffViewState,
+    pub pr_list_state: PrListState,
+    pr_list_rx: Option<Receiver<Vec<PrSummary>>>,
 
     // Syntax highlighting
     highlighter: Highlighter,
@@ -106,6 +109,7 @@ impl App {
             mode: AppMode::default(),
             focused: FocusedWindow::FileList,
             show_help: false,
+            show_pr_list: false,
             pending_command: AppCommand::None,
             branch,
             base_branch,
@@ -121,6 +125,8 @@ impl App {
             file_list_state: FileListState::new(),
             commit_list_state: CommitListState::new(),
             diff_view_state: DiffViewState::new(),
+            pr_list_state: PrListState::new(),
+            pr_list_rx: None,
             highlighter: Highlighter::new(),
         };
 
@@ -263,6 +269,21 @@ impl App {
             }
         }
 
+        // Check for completed PR list loading
+        if let Some(ref rx) = self.pr_list_rx {
+            match rx.try_recv() {
+                Ok(prs) => {
+                    self.pr_list_state.set_prs(prs);
+                    self.pr_list_rx = None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pr_list_state.set_error("Failed to load PRs".to_string());
+                    self.pr_list_rx = None;
+                }
+                Err(TryRecvError::Empty) => {} // Still loading
+            }
+        }
+
         // Trigger PR loading if needed
         let should_load_pr = self.pr.is_none() || self.last_pr_poll.elapsed() >= PR_POLL_INTERVAL;
         if should_load_pr && !self.pr_loading {
@@ -300,6 +321,11 @@ impl App {
             return Ok(());
         }
 
+        // PR list modal
+        if self.show_pr_list {
+            return self.handle_pr_list_key(&key);
+        }
+
         // Global keys
         if KeyInput::is_quit(&key) {
             self.running = false;
@@ -308,6 +334,12 @@ impl App {
 
         if KeyInput::is_help(&key) {
             self.show_help = true;
+            return Ok(());
+        }
+
+        // Open PR list with 'p'
+        if KeyInput::is_pr_list(&key) {
+            self.open_pr_list();
             return Ok(());
         }
 
@@ -582,6 +614,60 @@ impl App {
         std::mem::replace(&mut self.pending_command, AppCommand::None)
     }
 
+    /// Open PR list modal and start loading PRs
+    fn open_pr_list(&mut self) {
+        self.show_pr_list = true;
+        self.pr_list_state = PrListState::new();
+
+        // Load PRs in background
+        let (tx, rx) = mpsc::channel();
+        self.pr_list_rx = Some(rx);
+
+        let mut github = GitHubClient::new();
+        thread::spawn(move || {
+            let prs = github.list_open_prs().unwrap_or_default();
+            let _ = tx.send(prs);
+        });
+    }
+
+    /// Handle keys in PR list modal
+    fn handle_pr_list_key(&mut self, key: &KeyEvent) -> Result<()> {
+        if KeyInput::is_escape(key) {
+            self.show_pr_list = false;
+            return Ok(());
+        }
+
+        if KeyInput::is_down(key) {
+            self.pr_list_state.move_down();
+            return Ok(());
+        }
+
+        if KeyInput::is_up(key) {
+            self.pr_list_state.move_up();
+            return Ok(());
+        }
+
+        // Enter to checkout PR
+        if KeyInput::is_enter(key) {
+            if let Some(pr) = self.pr_list_state.selected() {
+                let _ = self.github.checkout_pr(pr.number);
+                self.show_pr_list = false;
+                self.refresh()?;
+            }
+            return Ok(());
+        }
+
+        // 'o' to open in browser
+        if KeyInput::is_open(key) {
+            if let Some(pr) = self.pr_list_state.selected() {
+                let _ = self.github.open_pr_in_browser(pr.number);
+            }
+            return Ok(());
+        }
+
+        Ok(())
+    }
+
     /// Render the UI
     pub fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
@@ -617,6 +703,13 @@ impl App {
             let help_area = centered_rect(60, 80, area);
             let help = HelpModal::new(colors);
             frame.render_widget(help, help_area);
+        }
+
+        // Render PR list modal if open
+        if self.show_pr_list {
+            let pr_area = centered_rect(70, 70, area);
+            let pr_list = PrListModal::new(colors);
+            frame.render_stateful_widget(pr_list, pr_area, &mut self.pr_list_state);
         }
     }
 

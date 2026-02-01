@@ -315,4 +315,8 @@ impl KeyInput {
     pub fn is_refresh(key: &KeyEvent) -> bool {
         key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::NONE
     }
+
+    pub fn is_pr_list(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('p') && key.modifiers == KeyModifiers::NONE
+    }
 }

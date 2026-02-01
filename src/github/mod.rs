@@ -205,6 +205,87 @@ impl GitHubClient {
     }
 }
 
+/// Summary of a PR for listing
+#[derive(Debug, Clone)]
+pub struct PrSummary {
+    pub number: u64,
+    pub title: String,
+    pub author: String,
+    pub branch: String,
+    pub updated_at: String,
+    pub url: String,
+}
+
+impl GitHubClient {
+    /// List open PRs for the current repo
+    pub fn list_open_prs(&mut self) -> Result<Vec<PrSummary>> {
+        if !self.is_available() {
+            return Ok(Vec::new());
+        }
+
+        let output = Command::new("gh")
+            .args([
+                "pr", "list",
+                "--state", "open",
+                "--json", "number,title,author,headRefName,updatedAt,url",
+                "--limit", "50",
+            ])
+            .output()
+            .context("Failed to run gh pr list")?;
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        #[derive(Deserialize)]
+        struct PrData {
+            number: u64,
+            title: String,
+            author: Author,
+            #[serde(rename = "headRefName")]
+            head_ref_name: String,
+            #[serde(rename = "updatedAt")]
+            updated_at: String,
+            url: String,
+        }
+
+        #[derive(Deserialize)]
+        struct Author {
+            login: String,
+        }
+
+        let prs: Vec<PrData> = serde_json::from_slice(&output.stdout)
+            .unwrap_or_default();
+
+        Ok(prs.into_iter().map(|p| PrSummary {
+            number: p.number,
+            title: p.title,
+            author: p.author.login,
+            branch: p.head_ref_name,
+            updated_at: p.updated_at.split('T').next().unwrap_or("").to_string(),
+            url: p.url,
+        }).collect())
+    }
+
+    /// Checkout a PR branch
+    pub fn checkout_pr(&self, pr_number: u64) -> Result<()> {
+        Command::new("gh")
+            .args(["pr", "checkout", &pr_number.to_string()])
+            .output()
+            .context("Failed to checkout PR")?;
+        Ok(())
+    }
+
+    /// Open PR in browser
+    pub fn open_pr_in_browser(&self, pr_number: u64) -> Result<()> {
+        Command::new("gh")
+            .args(["pr", "view", &pr_number.to_string(), "--web"])
+            .spawn()
+            .context("Failed to open PR in browser")?;
+        Ok(())
+    }
+}
+
 impl Default for GitHubClient {
     fn default() -> Self {
         Self::new()

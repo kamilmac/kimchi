@@ -55,6 +55,7 @@ impl<'a> Widget for HelpModal<'a> {
             Line::from(Span::styled("Actions", self.colors.style_header())),
             format_binding("y", "Yank path (with line number in diff)", self.colors),
             format_binding("o", "Open in $EDITOR at line", self.colors),
+            format_binding("p", "Open PRs list", self.colors),
             format_binding("r", "Refresh git data", self.colors),
             format_binding("?", "Toggle help", self.colors),
             format_binding("q", "Quit", self.colors),
