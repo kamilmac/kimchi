@@ -118,7 +118,7 @@ impl Default for Timing {
     fn default() -> Self {
         Self {
             file_watcher_debounce: Duration::from_millis(500),
-            pr_poll_interval: Duration::from_secs(60),
+            pr_poll_interval: Duration::from_secs(300), // 5 minutes
         }
     }
 }

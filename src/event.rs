@@ -312,6 +312,10 @@ impl KeyInput {
         key.code == KeyCode::Char('o') && key.modifiers == KeyModifiers::NONE
     }
 
+    pub fn is_checkout(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::NONE
+    }
+
     pub fn is_refresh(key: &KeyEvent) -> bool {
         key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::NONE
     }

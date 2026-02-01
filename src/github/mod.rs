@@ -223,6 +223,69 @@ pub struct PrSummary {
 }
 
 impl GitHubClient {
+    /// Get PR info by number
+    pub fn get_pr_by_number(&mut self, pr_number: u64) -> Result<Option<PrInfo>> {
+        if !self.is_available() {
+            return Ok(None);
+        }
+
+        let output = Command::new("gh")
+            .args([
+                "pr",
+                "view",
+                &pr_number.to_string(),
+                "--json",
+                "number,title,body,author,state,url",
+            ])
+            .output()
+            .context("Failed to run gh pr view")?;
+
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        #[derive(Deserialize)]
+        struct PrBasic {
+            number: u64,
+            title: String,
+            body: String,
+            author: Author,
+            state: String,
+            url: String,
+        }
+
+        #[derive(Deserialize)]
+        struct Author {
+            login: String,
+        }
+
+        let basic: PrBasic =
+            serde_json::from_slice(&output.stdout).context("Failed to parse PR JSON")?;
+
+        let mut pr_info = PrInfo {
+            number: basic.number,
+            title: basic.title,
+            body: basic.body,
+            author: basic.author.login,
+            state: basic.state,
+            url: basic.url,
+            ..Default::default()
+        };
+
+        // Get reviews
+        if let Ok(reviews) = self.get_reviews(basic.number) {
+            pr_info.reviews = reviews;
+        }
+
+        // Get comments
+        if let Ok((comments, file_comments)) = self.get_comments(basic.number) {
+            pr_info.comments = comments;
+            pr_info.file_comments = file_comments;
+        }
+
+        Ok(Some(pr_info))
+    }
+
     /// List open PRs for the current repo
     pub fn list_open_prs(&mut self) -> Result<Vec<PrSummary>> {
         if !self.is_available() {
@@ -286,6 +349,9 @@ impl GitHubClient {
     pub fn open_pr_in_browser(&self, pr_number: u64) -> Result<()> {
         Command::new("gh")
             .args(["pr", "view", &pr_number.to_string(), "--web"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .context("Failed to open PR in browser")?;
         Ok(())

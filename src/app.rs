@@ -15,33 +15,38 @@ use crate::event::KeyInput;
 use crate::git::{AppMode, Commit, DiffStats, GitClient, StatusEntry};
 use crate::github::{GitHubClient, PrInfo, PrSummary};
 use crate::ui::{
-    centered_rect, AppLayout, CommitList, CommitListState, DiffView, DiffViewState, FileList,
-    FileListState, HelpModal, Highlighter, PrListModal, PrListState, PreviewContent,
+    centered_rect, AppLayout, DiffView, DiffViewState, FileList, FileListState, HelpModal,
+    Highlighter, PrListPanel, PrListPanelState, PreviewContent,
 };
 
 /// Which window is focused
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedWindow {
     FileList,
-    CommitList,
+    PrList,
     Preview,
 }
 
 impl FocusedWindow {
-    pub fn next(self) -> Self {
+    /// Tab cycles between left panes only
+    pub fn next_left(self) -> Self {
         match self {
-            Self::FileList => Self::Preview,
-            Self::Preview => Self::CommitList,
-            Self::CommitList => Self::FileList,
+            Self::FileList => Self::PrList,
+            Self::PrList => Self::FileList,
+            Self::Preview => Self::FileList,
         }
     }
 
-    pub fn prev(self) -> Self {
+    pub fn prev_left(self) -> Self {
         match self {
-            Self::FileList => Self::CommitList,
-            Self::CommitList => Self::Preview,
-            Self::Preview => Self::FileList,
+            Self::FileList => Self::PrList,
+            Self::PrList => Self::FileList,
+            Self::Preview => Self::PrList,
         }
+    }
+
+    pub fn is_left_pane(self) -> bool {
+        matches!(self, Self::FileList | Self::PrList)
     }
 }
 
@@ -65,7 +70,6 @@ pub struct App {
     pub mode: AppMode,
     pub focused: FocusedWindow,
     pub show_help: bool,
-    pub show_pr_list: bool,
     pub pending_command: AppCommand,
 
     // Data
@@ -76,17 +80,20 @@ pub struct App {
     pub diff_stats: DiffStats,
     stats_loading: bool,
     stats_rx: Option<Receiver<DiffStats>>,
-    pub pr: Option<PrInfo>,
-    pr_loading: bool,
-    pr_rx: Option<Receiver<Option<PrInfo>>>,
-    last_pr_poll: Instant,
+    // Full PR details for currently selected PR
+    pub selected_pr: Option<PrInfo>,
+    selected_pr_number: Option<u64>,
+    pr_detail_loading: bool,
+    pr_detail_rx: Option<Receiver<Option<PrInfo>>>,
+    // PR list polling
+    last_pr_list_poll: Instant,
+    pr_list_loading: bool,
+    pr_list_rx: Option<Receiver<Vec<PrSummary>>>,
 
     // Widget states
     pub file_list_state: FileListState,
-    pub commit_list_state: CommitListState,
+    pub pr_list_panel_state: PrListPanelState,
     pub diff_view_state: DiffViewState,
-    pub pr_list_state: PrListState,
-    pr_list_rx: Option<Receiver<Vec<PrSummary>>>,
 
     // Syntax highlighting
     highlighter: Highlighter,
@@ -109,7 +116,6 @@ impl App {
             mode: AppMode::default(),
             focused: FocusedWindow::FileList,
             show_help: false,
-            show_pr_list: false,
             pending_command: AppCommand::None,
             branch,
             base_branch,
@@ -118,17 +124,21 @@ impl App {
             diff_stats: DiffStats::default(),
             stats_loading: false,
             stats_rx: None,
-            pr: None,
-            pr_loading: false,
-            pr_rx: None,
-            last_pr_poll: Instant::now(),
-            file_list_state: FileListState::new(),
-            commit_list_state: CommitListState::new(),
-            diff_view_state: DiffViewState::new(),
-            pr_list_state: PrListState::new(),
+            selected_pr: None,
+            selected_pr_number: None,
+            pr_detail_loading: false,
+            pr_detail_rx: None,
+            last_pr_list_poll: Instant::now() - Duration::from_secs(301), // Force immediate load
+            pr_list_loading: false,
             pr_list_rx: None,
+            file_list_state: FileListState::new(),
+            pr_list_panel_state: PrListPanelState::new(),
+            diff_view_state: DiffViewState::new(),
             highlighter: Highlighter::new(),
         };
+
+        // Initialize PR list panel with current branch
+        app.pr_list_panel_state.set_current_branch(app.branch.clone());
 
         app.refresh()?;
         Ok(app)
@@ -159,12 +169,13 @@ impl App {
 
         // Update widget states
         self.file_list_state.set_files(self.files.clone());
-        self.commit_list_state.set_commits(self.commits.clone());
 
-        // PR info is loaded asynchronously via handle_tick(), not during refresh
-        // Clear PR data on branch change so it gets reloaded
+        // Update PR list panel with current branch
         if branch_changed {
-            self.pr = None;
+            self.pr_list_panel_state.set_current_branch(self.branch.clone());
+            // Clear selected PR details since branch changed
+            self.selected_pr = None;
+            self.selected_pr_number = None;
         }
 
         // Update preview
@@ -190,26 +201,49 @@ impl App {
         });
     }
 
-    /// Spawn background thread to load PR info
-    fn spawn_pr_loader(&mut self) {
+    /// Spawn background thread to load PR list
+    fn spawn_pr_list_loader(&mut self) {
         let (tx, rx) = mpsc::channel();
-        self.pr_rx = Some(rx);
-        self.pr_loading = true;
+        self.pr_list_rx = Some(rx);
+        self.pr_list_loading = true;
+        self.pr_list_panel_state.loading = true;
 
-        let branch = self.branch.clone();
+        thread::spawn(move || {
+            let mut github = GitHubClient::new();
+            let prs = if github.is_available() {
+                github.list_open_prs().unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let _ = tx.send(prs);
+        });
+    }
+
+    /// Spawn background thread to load full PR details
+    fn spawn_pr_detail_loader(&mut self, pr_number: u64) {
+        let (tx, rx) = mpsc::channel();
+        self.pr_detail_rx = Some(rx);
+        self.pr_detail_loading = true;
+        self.selected_pr_number = Some(pr_number);
 
         thread::spawn(move || {
             let mut github = GitHubClient::new();
             if github.is_available() {
-                if let Ok(pr) = github.get_pr_for_branch(&branch) {
+                // Use get_pr_for_branch but we need the PR number
+                // For now, we'll fetch by branch - but ideally we'd have a get_pr_by_number method
+                if let Ok(pr) = github.get_pr_by_number(pr_number) {
                     let _ = tx.send(pr);
+                } else {
+                    let _ = tx.send(None);
                 }
+            } else {
+                let _ = tx.send(None);
             }
         });
     }
 
-    /// Apply PR info to state
-    fn apply_pr_info(&mut self, pr: PrInfo) {
+    /// Apply full PR details to state
+    fn apply_pr_details(&mut self, pr: PrInfo) {
         // Update file comments indicator
         let comments: HashMap<String, bool> = pr
             .file_comments
@@ -221,15 +255,17 @@ impl App {
         // Update diff view with PR for inline comments
         self.diff_view_state.set_pr(Some(pr.clone()));
 
-        self.pr = Some(pr);
+        self.selected_pr = Some(pr);
 
-        // Update preview if showing commit
-        self.update_preview();
+        // Update preview if PR list is focused
+        if self.focused == FocusedWindow::PrList {
+            self.show_selected_pr_in_preview();
+        }
     }
 
     /// Handle tick event - periodic updates
     pub fn handle_tick(&mut self) {
-        const PR_POLL_INTERVAL: Duration = Duration::from_secs(60);
+        const PR_LIST_POLL_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
 
         // Check for completed stats loading
         if let Some(ref rx) = self.stats_rx {
@@ -247,47 +283,72 @@ impl App {
             }
         }
 
-        // Check for completed PR loading
-        if let Some(ref rx) = self.pr_rx {
-            match rx.try_recv() {
-                Ok(Some(pr)) => {
-                    self.apply_pr_info(pr);
-                    self.pr_loading = false;
-                    self.pr_rx = None;
-                    self.last_pr_poll = Instant::now();
-                }
-                Ok(None) => {
-                    self.pr_loading = false;
-                    self.pr_rx = None;
-                    self.last_pr_poll = Instant::now();
-                }
-                Err(TryRecvError::Disconnected) => {
-                    self.pr_loading = false;
-                    self.pr_rx = None;
-                }
-                Err(TryRecvError::Empty) => {} // Still loading
-            }
-        }
-
         // Check for completed PR list loading
         if let Some(ref rx) = self.pr_list_rx {
             match rx.try_recv() {
                 Ok(prs) => {
-                    self.pr_list_state.set_prs(prs);
+                    self.pr_list_panel_state.set_prs(prs);
+                    self.pr_list_loading = false;
                     self.pr_list_rx = None;
+                    self.last_pr_list_poll = Instant::now();
+
+                    // Auto-load details for selected PR
+                    if let Some(pr_num) = self.pr_list_panel_state.selected_number() {
+                        let already_loaded = self.selected_pr.as_ref().map(|p| p.number) == Some(pr_num);
+                        if !already_loaded && !self.pr_detail_loading {
+                            self.spawn_pr_detail_loader(pr_num);
+                        }
+                    }
                 }
                 Err(TryRecvError::Disconnected) => {
-                    self.pr_list_state.set_error("Failed to load PRs".to_string());
+                    self.pr_list_loading = false;
                     self.pr_list_rx = None;
+                    self.pr_list_panel_state.loading = false;
                 }
                 Err(TryRecvError::Empty) => {} // Still loading
             }
         }
 
-        // Trigger PR loading if needed
-        let should_load_pr = self.pr.is_none() || self.last_pr_poll.elapsed() >= PR_POLL_INTERVAL;
-        if should_load_pr && !self.pr_loading {
-            self.spawn_pr_loader();
+        // Check for completed PR detail loading
+        if let Some(ref rx) = self.pr_detail_rx {
+            match rx.try_recv() {
+                Ok(Some(pr)) => {
+                    // Only apply if this PR is still the one we want
+                    let currently_selected = self.pr_list_panel_state.selected_number();
+                    if currently_selected == Some(pr.number) {
+                        self.apply_pr_details(pr);
+                    }
+                    self.pr_detail_loading = false;
+                    self.pr_detail_rx = None;
+                    // Update preview to show loaded content
+                    if self.focused == FocusedWindow::PrList {
+                        self.show_selected_pr_in_preview();
+                    }
+                }
+                Ok(None) => {
+                    self.pr_detail_loading = false;
+                    self.pr_detail_rx = None;
+                    // Update preview to clear loading state
+                    if self.focused == FocusedWindow::PrList {
+                        self.show_selected_pr_in_preview();
+                    }
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pr_detail_loading = false;
+                    self.pr_detail_rx = None;
+                    // Update preview to clear loading state
+                    if self.focused == FocusedWindow::PrList {
+                        self.show_selected_pr_in_preview();
+                    }
+                }
+                Err(TryRecvError::Empty) => {} // Still loading
+            }
+        }
+
+        // Trigger PR list loading if needed (on startup and every 5 minutes)
+        let should_load_pr_list = self.last_pr_list_poll.elapsed() >= PR_LIST_POLL_INTERVAL;
+        if should_load_pr_list && !self.pr_list_loading {
+            self.spawn_pr_list_loader();
         }
     }
 
@@ -321,11 +382,6 @@ impl App {
             return Ok(());
         }
 
-        // PR list modal
-        if self.show_pr_list {
-            return self.handle_pr_list_key(&key);
-        }
-
         // Global keys
         if KeyInput::is_quit(&key) {
             self.running = false;
@@ -337,25 +393,47 @@ impl App {
             return Ok(());
         }
 
-        // Open PR list with 'p'
-        if KeyInput::is_pr_list(&key) {
-            self.open_pr_list();
-            return Ok(());
-        }
-
         if KeyInput::is_refresh(&key) {
             self.refresh()?;
             return Ok(());
         }
 
+        // Tab cycles between left panes only
         if KeyInput::is_tab(&key) {
-            self.focused = self.focused.next();
+            self.focused = self.focused.next_left();
             self.on_focus_change();
             return Ok(());
         }
 
         if KeyInput::is_shift_tab(&key) {
-            self.focused = self.focused.prev();
+            self.focused = self.focused.prev_left();
+            self.on_focus_change();
+            return Ok(());
+        }
+
+        // Enter is context-sensitive
+        if KeyInput::is_enter(&key) {
+            match self.focused {
+                FocusedWindow::FileList => {
+                    // Go to preview
+                    self.focused = FocusedWindow::Preview;
+                    self.on_focus_change();
+                }
+                FocusedWindow::PrList => {
+                    // Checkout the selected PR
+                    if let Some(pr) = self.pr_list_panel_state.selected() {
+                        let _ = self.github.checkout_pr(pr.number);
+                        self.refresh()?;
+                    }
+                }
+                FocusedWindow::Preview => {}
+            }
+            return Ok(());
+        }
+
+        // Escape goes back to left pane
+        if KeyInput::is_escape(&key) && self.focused == FocusedWindow::Preview {
+            self.focused = FocusedWindow::FileList;
             self.on_focus_change();
             return Ok(());
         }
@@ -383,15 +461,27 @@ impl App {
             return Ok(());
         }
 
+        // 'o' key is context-specific
         if KeyInput::is_open(&key) {
-            self.open_in_editor();
+            match self.focused {
+                FocusedWindow::PrList => {
+                    // Open selected PR in browser
+                    if let Some(pr) = self.pr_list_panel_state.selected() {
+                        let _ = self.github.open_pr_in_browser(pr.number);
+                    }
+                }
+                _ => {
+                    // Open file in editor
+                    self.open_in_editor();
+                }
+            }
             return Ok(());
         }
 
         // Window-specific keys
         match self.focused {
             FocusedWindow::FileList => self.handle_file_list_key(&key)?,
-            FocusedWindow::CommitList => self.handle_commit_list_key(&key)?,
+            FocusedWindow::PrList => self.handle_pr_list_panel_key(&key)?,
             FocusedWindow::Preview => self.handle_preview_key(&key)?,
         }
 
@@ -434,22 +524,56 @@ impl App {
         Ok(())
     }
 
-    fn handle_commit_list_key(&mut self, key: &KeyEvent) -> Result<()> {
-        let changed = if KeyInput::is_down(key) {
-            self.commit_list_state.move_down();
+    fn handle_pr_list_panel_key(&mut self, key: &KeyEvent) -> Result<()> {
+        let selection_changed = if KeyInput::is_down(key) {
+            self.pr_list_panel_state.move_down();
             true
         } else if KeyInput::is_up(key) {
-            self.commit_list_state.move_up();
+            self.pr_list_panel_state.move_up();
             true
         } else {
             false
         };
 
-        if changed {
-            self.update_preview();
+        if selection_changed {
+            // Load details for newly selected PR
+            if let Some(pr_num) = self.pr_list_panel_state.selected_number() {
+                // Check if we need to load this PR's details
+                let already_loaded = self.selected_pr.as_ref().map(|p| p.number) == Some(pr_num);
+                let already_loading = self.pr_detail_loading && self.selected_pr_number == Some(pr_num);
+
+                if !already_loaded && !already_loading {
+                    self.spawn_pr_detail_loader(pr_num);
+                }
+            }
+            self.show_selected_pr_in_preview();
         }
 
         Ok(())
+    }
+
+    fn show_selected_pr_in_preview(&mut self) {
+        // Show loading indicator if fetching PR details
+        if self.pr_detail_loading {
+            if let Some(pr) = self.pr_list_panel_state.selected() {
+                self.diff_view_state.set_content(PreviewContent::Loading {
+                    message: format!("Loading PR #{} details...", pr.number),
+                });
+            }
+            return;
+        }
+
+        // Show selected PR details in preview
+        if let Some(pr) = self.selected_pr.clone() {
+            self.diff_view_state.set_content(PreviewContent::PrDetails { pr });
+        } else if let Some(summary) = self.pr_list_panel_state.selected() {
+            // Show basic info from summary if full details not loaded yet
+            self.diff_view_state.set_content(PreviewContent::Loading {
+                message: format!("PR #{}: {}", summary.number, summary.title),
+            });
+        } else {
+            self.diff_view_state.set_content(PreviewContent::Empty);
+        }
     }
 
     fn handle_preview_key(&mut self, key: &KeyEvent) -> Result<()> {
@@ -475,13 +599,17 @@ impl App {
     }
 
     fn on_focus_change(&mut self) {
-        if self.focused == FocusedWindow::CommitList {
-            // Show commit summary when commit list is focused
-            if let Some(commit) = self.commit_list_state.selected().cloned() {
-                self.diff_view_state.set_content(PreviewContent::CommitSummary {
-                    commit,
-                    pr: self.pr.clone(),
-                });
+        if self.focused == FocusedWindow::PrList {
+            // Show selected PR in preview when PR list is focused
+            self.show_selected_pr_in_preview();
+            // Load details if needed
+            if let Some(pr_num) = self.pr_list_panel_state.selected_number() {
+                let already_loaded = self.selected_pr.as_ref().map(|p| p.number) == Some(pr_num);
+                let already_loading = self.pr_detail_loading && self.selected_pr_number == Some(pr_num);
+
+                if !already_loaded && !already_loading {
+                    self.spawn_pr_detail_loader(pr_num);
+                }
             }
         } else {
             self.update_preview();
@@ -489,27 +617,15 @@ impl App {
     }
 
     fn update_preview(&mut self) {
-        if self.focused == FocusedWindow::CommitList {
-            if let Some(commit) = self.commit_list_state.selected().cloned() {
-                self.diff_view_state.set_content(PreviewContent::CommitSummary {
-                    commit,
-                    pr: self.pr.clone(),
-                });
-            }
+        if self.focused == FocusedWindow::PrList {
+            self.show_selected_pr_in_preview();
             return;
         }
 
         let content = if let Some(entry) = self.file_list_state.selected() {
             if entry.is_root {
-                // Root selected - show PR summary or empty
-                if let Some(commit) = self.commits.first().cloned() {
-                    PreviewContent::CommitSummary {
-                        commit,
-                        pr: self.pr.clone(),
-                    }
-                } else {
-                    PreviewContent::Empty
-                }
+                // Root selected - show empty or PR summary
+                PreviewContent::Empty
             } else if entry.is_dir && (self.mode == AppMode::Browse || self.mode == AppMode::Docs) {
                 // Directory selected in browse/docs mode - show empty
                 PreviewContent::Empty
@@ -614,60 +730,6 @@ impl App {
         std::mem::replace(&mut self.pending_command, AppCommand::None)
     }
 
-    /// Open PR list modal and start loading PRs
-    fn open_pr_list(&mut self) {
-        self.show_pr_list = true;
-        self.pr_list_state = PrListState::new();
-
-        // Load PRs in background
-        let (tx, rx) = mpsc::channel();
-        self.pr_list_rx = Some(rx);
-
-        let mut github = GitHubClient::new();
-        thread::spawn(move || {
-            let prs = github.list_open_prs().unwrap_or_default();
-            let _ = tx.send(prs);
-        });
-    }
-
-    /// Handle keys in PR list modal
-    fn handle_pr_list_key(&mut self, key: &KeyEvent) -> Result<()> {
-        if KeyInput::is_escape(key) {
-            self.show_pr_list = false;
-            return Ok(());
-        }
-
-        if KeyInput::is_down(key) {
-            self.pr_list_state.move_down();
-            return Ok(());
-        }
-
-        if KeyInput::is_up(key) {
-            self.pr_list_state.move_up();
-            return Ok(());
-        }
-
-        // Enter to checkout PR
-        if KeyInput::is_enter(key) {
-            if let Some(pr) = self.pr_list_state.selected() {
-                let _ = self.github.checkout_pr(pr.number);
-                self.show_pr_list = false;
-                self.refresh()?;
-            }
-            return Ok(());
-        }
-
-        // 'o' to open in browser
-        if KeyInput::is_open(key) {
-            if let Some(pr) = self.pr_list_state.selected() {
-                let _ = self.github.open_pr_in_browser(pr.number);
-            }
-            return Ok(());
-        }
-
-        Ok(())
-    }
-
     /// Render the UI
     pub fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
@@ -685,10 +747,10 @@ impl App {
             ));
         frame.render_stateful_widget(file_list, areas.file_list, &mut self.file_list_state);
 
-        // Render commit list
-        let commit_list = CommitList::new(colors)
-            .focused(self.focused == FocusedWindow::CommitList);
-        frame.render_stateful_widget(commit_list, areas.commit_list, &mut self.commit_list_state);
+        // Render PR list panel
+        let pr_list_panel = PrListPanel::new(colors)
+            .focused(self.focused == FocusedWindow::PrList);
+        frame.render_stateful_widget(pr_list_panel, areas.pr_info, &mut self.pr_list_panel_state);
 
         // Render diff view
         let diff_view = DiffView::new(colors)
@@ -703,13 +765,6 @@ impl App {
             let help_area = centered_rect(60, 80, area);
             let help = HelpModal::new(colors);
             frame.render_widget(help, help_area);
-        }
-
-        // Render PR list modal if open
-        if self.show_pr_list {
-            let pr_area = centered_rect(70, 70, area);
-            let pr_list = PrListModal::new(colors);
-            frame.render_stateful_widget(pr_list, pr_area, &mut self.pr_list_state);
         }
     }
 

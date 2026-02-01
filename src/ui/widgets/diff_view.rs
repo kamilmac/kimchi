@@ -15,6 +15,9 @@ use crate::ui::Highlighter;
 #[derive(Debug, Clone)]
 pub enum PreviewContent {
     Empty,
+    Loading {
+        message: String,
+    },
     FileDiff {
         path: String,
         content: String,
@@ -30,6 +33,9 @@ pub enum PreviewContent {
     CommitSummary {
         commit: Commit,
         pr: Option<PrInfo>,
+    },
+    PrDetails {
+        pr: PrInfo,
     },
 }
 
@@ -189,6 +195,16 @@ impl DiffViewState {
     fn parse_content(&mut self) {
         let base_lines = match &self.content {
             PreviewContent::Empty => vec![],
+            PreviewContent::Loading { message } => {
+                vec![DiffLine {
+                    left_text: Some(message.clone()),
+                    right_text: None,
+                    left_num: None,
+                    right_num: None,
+                    line_type: LineType::Info,
+                    is_header: true,
+                }]
+            }
             PreviewContent::FileDiff { content, .. } | PreviewContent::FolderDiff { content, .. } => {
                 if is_binary(content) {
                     vec![DiffLine {
@@ -219,6 +235,9 @@ impl DiffViewState {
             }
             PreviewContent::CommitSummary { commit, pr } => {
                 parse_commit_summary(commit, pr.as_ref())
+            }
+            PreviewContent::PrDetails { pr } => {
+                parse_pr_details(pr)
             }
         };
 
@@ -304,11 +323,15 @@ impl DiffViewState {
     pub fn title(&self) -> String {
         match &self.content {
             PreviewContent::Empty => "Preview".to_string(),
+            PreviewContent::Loading { .. } => "Loading...".to_string(),
             PreviewContent::FileDiff { path, .. } => path.clone(),
             PreviewContent::FolderDiff { path, .. } => format!("{}/", path),
             PreviewContent::FileContent { path, .. } => path.clone(),
             PreviewContent::CommitSummary { commit, .. } => {
                 format!("{} {}", commit.short_hash, commit.subject)
+            }
+            PreviewContent::PrDetails { pr } => {
+                format!("PR #{} {}", pr.number, pr.title)
             }
         }
     }
@@ -617,6 +640,96 @@ fn parse_commit_summary(commit: &Commit, pr: Option<&PrInfo>) -> Vec<DiffLine> {
     } else {
         lines.push(make_header_line(String::new(), LineType::Context));
         lines.push(make_header_line("No PR found for this branch".to_string(), LineType::Info));
+    }
+
+    lines
+}
+
+fn parse_pr_details(pr: &PrInfo) -> Vec<DiffLine> {
+    let mut lines = vec![];
+
+    // PR header
+    lines.push(make_header_line(format!("PR #{}", pr.number), LineType::Header));
+    lines.push(make_header_line("─".repeat(40), LineType::Info));
+    lines.push(make_header_line(pr.title.clone(), LineType::Info));
+    lines.push(make_header_line(String::new(), LineType::Context));
+    lines.push(make_header_line(format!("State:  {}", pr.state), LineType::Context));
+    lines.push(make_header_line(format!("Author: @{}", pr.author), LineType::Context));
+    lines.push(make_header_line(format!("URL:    {}", pr.url), LineType::Context));
+
+    // Description
+    if !pr.body.is_empty() {
+        lines.push(make_header_line(String::new(), LineType::Context));
+        lines.push(make_header_line("Description".to_string(), LineType::Header));
+        lines.push(make_header_line("─".repeat(40), LineType::Info));
+        for line in pr.body.lines() {
+            lines.push(make_header_line(format!("  {}", line), LineType::Context));
+        }
+    }
+
+    // Reviews
+    if !pr.reviews.is_empty() {
+        lines.push(make_header_line(String::new(), LineType::Context));
+        lines.push(make_header_line("Reviews".to_string(), LineType::Header));
+        lines.push(make_header_line("─".repeat(40), LineType::Info));
+        for review in &pr.reviews {
+            let (icon, line_type) = match review.state.as_str() {
+                "APPROVED" => ("✓", LineType::Added),
+                "CHANGES_REQUESTED" => ("✗", LineType::Removed),
+                _ => ("◯", LineType::Context),
+            };
+            lines.push(make_header_line(
+                format!("  {} {} - {}", icon, review.author, review.state),
+                line_type,
+            ));
+            if !review.body.is_empty() {
+                for line in review.body.lines() {
+                    lines.push(make_header_line(format!("    {}", line), LineType::Context));
+                }
+            }
+        }
+    }
+
+    // General comments
+    if !pr.comments.is_empty() {
+        lines.push(make_header_line(String::new(), LineType::Context));
+        lines.push(make_header_line("Comments".to_string(), LineType::Header));
+        lines.push(make_header_line("─".repeat(40), LineType::Info));
+        for comment in &pr.comments {
+            lines.push(make_header_line(
+                format!("  💬 {}", comment.author),
+                LineType::Comment,
+            ));
+            for line in comment.body.lines() {
+                lines.push(make_header_line(format!("    {}", line), LineType::Context));
+            }
+            lines.push(make_header_line(String::new(), LineType::Context));
+        }
+    }
+
+    // File comments (grouped by file)
+    if !pr.file_comments.is_empty() {
+        lines.push(make_header_line(String::new(), LineType::Context));
+        lines.push(make_header_line("File Comments".to_string(), LineType::Header));
+        lines.push(make_header_line("─".repeat(40), LineType::Info));
+
+        for (path, comments) in &pr.file_comments {
+            lines.push(make_header_line(format!("  {}", path), LineType::Info));
+            for comment in comments {
+                let line_info = comment
+                    .line
+                    .map(|l| format!(":{}", l))
+                    .unwrap_or_default();
+                lines.push(make_header_line(
+                    format!("    💬 @{}{}", comment.author, line_info),
+                    LineType::Comment,
+                ));
+                for line in comment.body.lines() {
+                    lines.push(make_header_line(format!("      {}", line), LineType::Context));
+                }
+            }
+            lines.push(make_header_line(String::new(), LineType::Context));
+        }
     }
 
     lines

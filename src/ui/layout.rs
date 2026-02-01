@@ -18,7 +18,7 @@ impl Default for AppLayout {
 /// Computed layout areas
 pub struct LayoutAreas {
     pub file_list: Rect,
-    pub commit_list: Rect,
+    pub pr_info: Rect,
     pub preview: Rect,
     pub status_bar: Rect,
 }
@@ -50,18 +50,18 @@ impl AppLayout {
                 ])
                 .split(main_area);
 
-            // Split left column into files and commits
+            // Split left column into files and PR list
             let left_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Min(5),
-                    Constraint::Length(10), // commits window height
+                    Constraint::Length(22), // PR list window height (2 lines per PR)
                 ])
                 .split(h_chunks[0]);
 
             LayoutAreas {
                 file_list: left_chunks[0],
-                commit_list: left_chunks[1],
+                pr_info: left_chunks[1],
                 preview: h_chunks[1],
                 status_bar,
             }
@@ -78,7 +78,7 @@ impl AppLayout {
 
             LayoutAreas {
                 file_list: v_chunks[0],
-                commit_list: v_chunks[1],
+                pr_info: v_chunks[1],
                 preview: v_chunks[2],
                 status_bar,
             }
