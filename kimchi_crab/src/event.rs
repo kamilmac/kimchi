@@ -1,0 +1,188 @@
+use anyhow::Result;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
+/// Application events
+#[derive(Debug, Clone)]
+pub enum AppEvent {
+    /// Terminal key press
+    Key(KeyEvent),
+    /// Terminal resize
+    Resize(u16, u16),
+    /// File system change detected
+    FileChanged,
+    /// Tick for periodic updates
+    Tick,
+    /// PR data loaded
+    PrLoaded,
+}
+
+/// Event handler that runs in a separate thread
+pub struct EventHandler {
+    rx: mpsc::Receiver<AppEvent>,
+    _tx: mpsc::Sender<AppEvent>,
+}
+
+impl EventHandler {
+    pub fn new(tick_rate: Duration) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let event_tx = tx.clone();
+
+        // Spawn event polling thread
+        thread::spawn(move || {
+            loop {
+                // Poll for events with timeout
+                if event::poll(tick_rate).unwrap_or(false) {
+                    if let Ok(event) = event::read() {
+                        let app_event = match event {
+                            Event::Key(key) => Some(AppEvent::Key(key)),
+                            Event::Resize(w, h) => Some(AppEvent::Resize(w, h)),
+                            _ => None,
+                        };
+
+                        if let Some(e) = app_event {
+                            if event_tx.send(e).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Send tick on timeout
+                    if event_tx.send(AppEvent::Tick).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Self { rx, _tx: tx }
+    }
+
+    /// Get the next event (blocking)
+    pub fn next(&self) -> Result<AppEvent> {
+        Ok(self.rx.recv()?)
+    }
+
+    /// Try to get the next event (non-blocking)
+    pub fn try_next(&self) -> Option<AppEvent> {
+        self.rx.try_recv().ok()
+    }
+}
+
+/// Key input helper
+pub struct KeyInput;
+
+impl KeyInput {
+    pub fn is_quit(key: &KeyEvent) -> bool {
+        matches!(
+            key,
+            KeyEvent {
+                code: KeyCode::Char('q'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } | KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+        )
+    }
+
+    pub fn is_down(key: &KeyEvent) -> bool {
+        matches!(
+            key.code,
+            KeyCode::Char('j') | KeyCode::Down
+        ) && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_up(key: &KeyEvent) -> bool {
+        matches!(
+            key.code,
+            KeyCode::Char('k') | KeyCode::Up
+        ) && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_fast_down(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('J') && key.modifiers == KeyModifiers::SHIFT
+    }
+
+    pub fn is_fast_up(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('K') && key.modifiers == KeyModifiers::SHIFT
+    }
+
+    pub fn is_left(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('h') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_right(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_tab(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Tab && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_shift_tab(key: &KeyEvent) -> bool {
+        key.code == KeyCode::BackTab
+            || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT)
+    }
+
+    pub fn is_page_down(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('d') && key.modifiers == KeyModifiers::CONTROL
+    }
+
+    pub fn is_page_up(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('u') && key.modifiers == KeyModifiers::CONTROL
+    }
+
+    pub fn is_top(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('g') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_bottom(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('G') && key.modifiers == KeyModifiers::SHIFT
+    }
+
+    pub fn is_enter(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Enter
+    }
+
+    pub fn is_escape(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Esc
+    }
+
+    pub fn is_help(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('?')
+    }
+
+    pub fn is_mode_cycle(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('m') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn get_mode_number(key: &KeyEvent) -> Option<u8> {
+        if key.modifiers != KeyModifiers::NONE {
+            return None;
+        }
+        match key.code {
+            KeyCode::Char('1') => Some(1),
+            KeyCode::Char('2') => Some(2),
+            KeyCode::Char('3') => Some(3),
+            KeyCode::Char('4') => Some(4),
+            _ => None,
+        }
+    }
+
+    pub fn is_yank(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('y') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_open(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('o') && key.modifiers == KeyModifiers::NONE
+    }
+
+    pub fn is_refresh(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::NONE
+    }
+}
