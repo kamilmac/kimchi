@@ -114,6 +114,11 @@ impl App {
 
     /// Refresh all data from git
     pub fn refresh(&mut self) -> Result<()> {
+        // Update branch name
+        let new_branch = self.git.current_branch().unwrap_or_else(|_| "HEAD".to_string());
+        let branch_changed = new_branch != self.branch;
+        self.branch = new_branch;
+
         // Load files based on mode
         self.files = match self.mode {
             AppMode::Browse => self.git.list_all_files()?,
@@ -135,8 +140,11 @@ impl App {
         self.file_list_state.set_files(self.files.clone());
         self.commit_list_state.set_commits(self.commits.clone());
 
-        // Load PR info if available (initial load only, refresh_pr handles polling)
-        if self.github.is_available() && self.pr.is_none() {
+        // Load PR info if available (on initial load or branch change)
+        if self.github.is_available() && (self.pr.is_none() || branch_changed) {
+            if branch_changed {
+                self.pr = None; // Clear old PR data
+            }
             self.refresh_pr();
         }
 
