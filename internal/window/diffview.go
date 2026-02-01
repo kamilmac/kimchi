@@ -24,6 +24,7 @@ type DiffView struct {
 	folderPath string // non-empty when showing folder diff
 	isRoot     bool   // true when showing PR summary
 	pr         *github.PRInfo
+	commit     *git.Commit // current commit when in commit view
 	style      git.DiffStyle
 	ready      bool
 	width      int
@@ -67,9 +68,26 @@ func (d *DiffView) SetContent(content string, filePath string) {
 	d.filePath = filePath
 	d.folderPath = ""
 	d.isRoot = false
+	d.commit = nil
 	d.cursor = 0
 	if d.ready {
 		styled := d.renderContent(content)
+		d.viewport.SetContent(styled)
+		d.viewport.GotoTop()
+	}
+}
+
+// SetCommitView shows commit details and PR summary
+func (d *DiffView) SetCommitView(commit *git.Commit, pr *github.PRInfo) {
+	d.content = ""
+	d.filePath = ""
+	d.folderPath = ""
+	d.isRoot = false
+	d.commit = commit
+	d.pr = pr
+	d.cursor = 0
+	if d.ready {
+		styled := d.renderCommitView()
 		d.viewport.SetContent(styled)
 		d.viewport.GotoTop()
 	}
@@ -274,6 +292,38 @@ func (d *DiffView) getTitle() string {
 func (d *DiffView) renderPRSummary() string {
 	d.lineMap = nil // No line navigation for PR summary
 	return d.prRenderer.Render(d.pr)
+}
+
+func (d *DiffView) renderCommitView() string {
+	d.lineMap = nil // No line navigation for commit view
+	var lines []string
+
+	// Commit details
+	if d.commit != nil {
+		lines = append(lines, d.styles.DiffHeader.Render("Commit"))
+		lines = append(lines, d.styles.Muted.Render(strings.Repeat("─", 40)))
+		lines = append(lines, fmt.Sprintf("%s %s",
+			d.styles.Muted.Render("Hash:"),
+			d.commit.Hash,
+		))
+		lines = append(lines, fmt.Sprintf("%s %s",
+			d.styles.Muted.Render("Author:"),
+			d.commit.Author,
+		))
+		lines = append(lines, fmt.Sprintf("%s %s",
+			d.styles.Muted.Render("Date:"),
+			d.commit.Date,
+		))
+		lines = append(lines, "")
+		lines = append(lines, d.styles.ListItemSelected.Render(d.commit.Subject))
+		lines = append(lines, "")
+		lines = append(lines, "")
+	}
+
+	// PR summary below
+	lines = append(lines, d.prRenderer.Render(d.pr))
+
+	return strings.Join(lines, "\n")
 }
 func (d *DiffView) renderContent(content string) string {
 	if content == "" {

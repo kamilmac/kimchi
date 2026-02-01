@@ -300,11 +300,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case CommitSelectedMsg:
-		// When commit is selected, show PR summary in diff view
-		a.state.SelectedFile = ""
-		a.state.SelectedFolder = ""
-		a.state.IsRootSelected = true
-		a.diffView.SetFolderContent("", "", true, a.state.PR)
+		// When commit is selected, show commit details + PR summary
+		a.diffView.SetCommitView(&msg.Commit, a.state.PR)
 		return a, nil
 
 	case DiffLoadedMsg:
@@ -347,7 +344,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case FolderDiffLoadedMsg:
 		a.state.Diff = msg.Content
-		a.diffView.SetFolderContent(msg.Content, msg.Path, a.state.IsRootSelected, a.state.PR)
+		// Show folder diff content (not PR summary - that's only for commit view)
+		a.diffView.SetFolderContent(msg.Content, msg.Path, false, a.state.PR)
 		return a, nil
 
 	case FileContentLoadedMsg:
@@ -396,18 +394,26 @@ func (a *App) delegateToFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cycleFocus(reverse bool) {
+	prevWindow := a.state.FocusedWindow
+
 	// Use the current preview window in the cycle
 	previewWindow := a.getPreviewWindow()
 	windowOrder := []string{config.WindowFileList, config.WindowCommitList, previewWindow}
 	a.state.CycleWindow(windowOrder, reverse)
 	a.updateFocus()
 
-	// Show PR summary when commit window gets focus
+	// Handle view updates based on focus change
 	if a.state.FocusedWindow == config.WindowCommitList {
-		a.state.SelectedFile = ""
-		a.state.SelectedFolder = ""
-		a.state.IsRootSelected = true
-		a.diffView.SetFolderContent("", "", true, a.state.PR)
+		// Show commit details + PR summary when commit window gets focus
+		commit := a.commitList.SelectedCommit()
+		a.diffView.SetCommitView(commit, a.state.PR)
+	} else if a.state.FocusedWindow == config.WindowFileList && prevWindow == config.WindowCommitList {
+		// Restore file diff when switching back to file list
+		if a.state.SelectedFile != "" {
+			a.diffView.SetContent(a.state.Diff, a.state.SelectedFile)
+		} else {
+			a.diffView.SetContent("", "")
+		}
 	}
 }
 
@@ -768,12 +774,7 @@ func (a *App) loadPR() tea.Cmd {
 
 func (a *App) loadFolderContent() tea.Cmd {
 	return func() tea.Msg {
-		if a.state.IsRootSelected {
-			// For root, we'll show PR summary - content is built by DiffView
-			return FolderDiffLoadedMsg{Content: "", Path: ""}
-		}
-
-		// For folders, combine diffs of all children
+		// For folders (including root), combine diffs of all children
 		var combined strings.Builder
 		for _, path := range a.state.FolderChildren {
 			diff, err := a.git.Diff(path, a.state.DiffMode)
