@@ -80,11 +80,11 @@ func (s *State) ToggleDiffStyle() {
 // SetFiles updates the file list
 func (s *State) SetFiles(files []git.FileStatus) {
 	s.Files = files
-	// Reset selection if out of bounds
-	if s.SelectedIndex >= len(files) {
+	// Reset selection if out of bounds (SelectedIndex can be -1 for folders)
+	if s.SelectedIndex < 0 || s.SelectedIndex >= len(files) {
 		s.SelectedIndex = 0
 	}
-	if len(files) > 0 && s.SelectedIndex < len(files) {
+	if len(files) > 0 && s.SelectedIndex >= 0 && s.SelectedIndex < len(files) {
 		s.SelectedFile = files[s.SelectedIndex].Path
 	} else {
 		s.SelectedFile = ""
