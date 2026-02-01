@@ -25,10 +25,10 @@ impl Highlighter {
         let extension = path.rsplit('.').next().unwrap_or("");
 
         // Map extensions to syntax names for better coverage
+        // Note: TypeScript is NOT mapped to JS because JS syntax doesn't understand
+        // TS type annotations and can break highlighting (e.g., // comments)
         let mapped_ext = match extension {
-            "ts" | "tsx" | "mts" | "cts" => "js", // TypeScript -> JavaScript
-            "jsx" => "js",
-            "mjs" | "cjs" => "js",
+            "jsx" | "mjs" | "cjs" => "js",
             "yml" => "yaml",
             "md" => "markdown",
             "dockerfile" => "Dockerfile",
