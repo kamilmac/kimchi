@@ -91,3 +91,6 @@ type FolderDiffLoadedMsg struct {
 	Content string
 	Path    string
 }
+
+// PRPollTickMsg triggers a PR data refresh
+type PRPollTickMsg struct{}

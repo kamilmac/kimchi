@@ -47,6 +47,9 @@ type App struct {
 	// File watcher
 	watcher *watcher.GitWatcher
 	program *tea.Program
+
+	// PR polling
+	prPollInterval time.Duration
 }
 
 // New creates a new application
@@ -80,16 +83,17 @@ func New(gitClient git.Client) *App {
 	}
 
 	app := &App{
-		state:       state,
-		git:         gitClient,
-		gh:          github.NewClient(),
-		layout:      layout.NewManager(layout.DefaultResponsive),
-		styles:      styles,
-		fileList:    fileList,
-		diffView:    diffView,
-		help:        help,
-		windows:     windows,
-		assignments: assignments,
+		state:          state,
+		git:            gitClient,
+		gh:             github.NewClient(),
+		layout:         layout.NewManager(layout.DefaultResponsive),
+		styles:         styles,
+		fileList:       fileList,
+		diffView:       diffView,
+		help:           help,
+		windows:        windows,
+		assignments:    assignments,
+		prPollInterval: 60 * time.Second,
 	}
 
 	// Set file selection callback
@@ -139,7 +143,14 @@ func (a *App) Init() tea.Cmd {
 		a.loadBranchInfo(),
 		a.loadFiles(),
 		a.loadPR(),
+		a.schedulePRPoll(),
 	)
+}
+
+func (a *App) schedulePRPoll() tea.Cmd {
+	return tea.Tick(a.prPollInterval, func(t time.Time) tea.Msg {
+		return PRPollTickMsg{}
+	})
 }
 
 // Update handles messages
@@ -291,6 +302,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state.Diff = msg.Content
 		a.diffView.SetFolderContent(msg.Content, msg.Path, a.state.IsRootSelected, a.state.PR)
 		return a, nil
+
+	case PRPollTickMsg:
+		// Refresh PR data and schedule next poll
+		return a, tea.Batch(a.loadPR(), a.schedulePRPoll())
 	}
 
 	return a, nil
