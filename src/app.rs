@@ -704,30 +704,42 @@ impl App {
 
         let total_width = area.width as usize;
         let timecop_green = Color::Rgb(150, 255, 170);
+        let timecop_red = Color::Rgb(255, 80, 80);
+
         let green_bold = ratatui::style::Style::default()
             .fg(timecop_green)
             .add_modifier(Modifier::BOLD);
+        let red_bold = ratatui::style::Style::default()
+            .fg(timecop_red)
+            .add_modifier(Modifier::BOLD);
 
-        // Left: TIMECOP logo
-        let logo = " ◆─T─I─M─E─C─O─P─◆";
+        // TIMECOP as timeline indicator
+        // Elements: ◆─T─I─M─E─C─O─P─◆ (9 positions)
+        // Position mapping (right to left): 0=◆, 1=P, 2=O, 3=C, 4=E, 5=M, 6=I, 7=T, 8=◆
+        let elements = ["◆", "─", "T", "─", "I", "─", "M", "─", "E", "─", "C", "─", "O", "─", "P", "─", "◆"];
+        let position_to_index = [16, 14, 12, 10, 8, 6, 4, 2, 0]; // maps timeline position to element index
 
-        // Center: timeline indicator
-        let timeline = self.render_timeline();
-        let timeline_width = timeline.chars().count();
-        let logo_width = logo.chars().count();
+        let selected_idx = self.timeline_position.display_index().min(8);
+        let highlight_center = position_to_index[selected_idx];
 
-        // Calculate center position for timeline
-        let center_start = (total_width / 2).saturating_sub(timeline_width / 2);
-        let padding_after_logo = center_start.saturating_sub(logo_width);
-        let padding_after_timeline = total_width.saturating_sub(center_start + timeline_width);
+        let mut spans = Vec::new();
+        for (i, elem) in elements.iter().enumerate() {
+            // Highlight the selected element and adjacent dashes
+            let is_highlighted = (i as isize - highlight_center as isize).abs() <= 1;
+            let style = if is_highlighted { red_bold } else { green_bold };
+            spans.push(Span::styled(*elem, style));
+        }
 
-        let line = Line::from(vec![
-            Span::styled(logo, green_bold),
-            Span::raw(" ".repeat(padding_after_logo)),
-            Span::styled(timeline, green_bold),
-            Span::raw(" ".repeat(padding_after_timeline)),
-        ]);
-        frame.render_widget(line, area);
+        // Center the logo
+        let logo_width = elements.iter().map(|s| s.chars().count()).sum::<usize>();
+        let left_pad = total_width.saturating_sub(logo_width) / 2;
+        let right_pad = total_width.saturating_sub(logo_width + left_pad);
+
+        let mut line_spans = vec![Span::raw(" ".repeat(left_pad))];
+        line_spans.extend(spans);
+        line_spans.push(Span::raw(" ".repeat(right_pad)));
+
+        frame.render_widget(Line::from(line_spans), area);
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
@@ -771,40 +783,6 @@ impl App {
             Span::styled(right_content, colors.style_status_bar()),
         ]);
         frame.render_widget(line, area);
-    }
-
-    /// Render timeline indicator (right to left: oldest ← newest)
-    fn render_timeline(&self) -> String {
-        // Only show available positions: full diff + wip + actual commits (max 10)
-        let num_commits = self.commit_count.min(10);
-        let num_positions = 2 + num_commits; // full diff + wip + commits
-
-        let selected_idx = self.timeline_position.display_index();
-        let mut parts = Vec::new();
-
-        // Build right to left: index 0=full diff on right
-        for i in (0..num_positions).rev() {
-            let is_selected = selected_idx == i;
-            let is_full_diff = i == 0;
-            let is_wip = i == 1;
-
-            let symbol = if is_full_diff {
-                '◆'
-            } else if is_wip {
-                '✱'
-            } else {
-                '○'
-            };
-
-            let part = if is_selected {
-                format!("[{}]", symbol)
-            } else {
-                symbol.to_string()
-            };
-            parts.push(part);
-        }
-
-        parts.join("─")
     }
 
     /// Generate file list title

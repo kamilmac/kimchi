@@ -72,7 +72,7 @@ impl TimelinePosition {
                     Self::Wip
                 }
             }
-            Self::CommitDiff(n) if n < max_commits && n < 10 => Self::CommitDiff(n + 1),
+            Self::CommitDiff(n) if n < max_commits && n < 7 => Self::CommitDiff(n + 1),
             other => other,
         }
     }
