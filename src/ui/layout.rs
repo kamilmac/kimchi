@@ -32,19 +32,19 @@ impl AppLayout {
             _ => ((pr_count + 2) as u16).min(18),          // border + count, max 16 visible
         };
 
-        // Split: header | main content | PR panel | status bar
+        // Split: main content | header | PR panel | status bar
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
                 Constraint::Min(10),
+                Constraint::Length(1),
                 Constraint::Length(pr_height),
                 Constraint::Length(1),
             ])
             .split(area);
 
-        let header = v_chunks[0];
-        let main_area = v_chunks[1];
+        let main_area = v_chunks[0];
+        let header = v_chunks[1];
         let pr_info = v_chunks[2];
         let status_bar = v_chunks[3];
 
