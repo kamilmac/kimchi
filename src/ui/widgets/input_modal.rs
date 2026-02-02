@@ -80,31 +80,16 @@ impl InputModalState {
                 InputResult::Cancelled
             }
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT)
-                    || key.modifiers.contains(KeyModifiers::CONTROL)
-                    || key.modifiers.contains(KeyModifiers::ALT)
-                {
-                    // Shift+Enter, Ctrl+Enter, or Alt+Enter inserts newline
-                    let byte_pos = self.input
-                        .char_indices()
-                        .nth(self.cursor_pos)
-                        .map(|(i, _)| i)
-                        .unwrap_or(self.input.len());
-                    self.input.insert(byte_pos, '\n');
-                    self.cursor_pos += 1;
-                    InputResult::Continue
-                } else {
-                    // Enter submits
-                    if let Some(action) = &self.action {
-                        if action.needs_body() && self.input.trim().is_empty() {
-                            self.error = Some("Message cannot be empty".to_string());
-                            InputResult::Continue
-                        } else {
-                            InputResult::Submit
-                        }
+                // Enter submits
+                if let Some(action) = &self.action {
+                    if action.needs_body() && self.input.trim().is_empty() {
+                        self.error = Some("Message cannot be empty".to_string());
+                        InputResult::Continue
                     } else {
                         InputResult::Submit
                     }
+                } else {
+                    InputResult::Submit
                 }
             }
             KeyCode::Char(c) => {
@@ -119,6 +104,18 @@ impl InputModalState {
                         }
                         _ => return InputResult::Continue, // Ignore other keys for confirmation
                     }
+                }
+
+                // Ctrl+N inserts newline
+                if c == 'n' && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    let byte_pos = self.input
+                        .char_indices()
+                        .nth(self.cursor_pos)
+                        .map(|(i, _)| i)
+                        .unwrap_or(self.input.len());
+                    self.input.insert(byte_pos, '\n');
+                    self.cursor_pos += 1;
+                    return InputResult::Continue;
                 }
 
                 // For text input, insert character at cursor
@@ -224,7 +221,7 @@ impl<'a> Widget for InputModal<'a> {
             // Show text input area
             let mut lines = vec![
                 Line::from(Span::styled(
-                    "Shift+Enter for newline, Enter to submit, Esc to cancel",
+                    "Ctrl+N for newline, Enter to submit, Esc to cancel",
                     self.colors.style_muted(),
                 )),
                 Line::from(""),
