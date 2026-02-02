@@ -2,6 +2,11 @@
 
 Terminal UI for reviewing code changes. Built for the AI coding era.
 
+<p>
+  <img src="screenshots/diff-view.png" width="49%" />
+  <img src="screenshots/pr-view.png" width="49%" />
+</p>
+
 ## Why
 
 AI agents commit faster than you can review. This creates problems:
@@ -11,19 +16,6 @@ AI agents commit faster than you can review. This creates problems:
 3. **Code is secondary.** When agents write, you review. The diff is the artifact, not the source file.
 
 Kimchi sits next to your AI agent. Shows changes, refreshes automatically, PRs are a keystroke away.
-
-```
-┌─ Files (4) ────────┬─ src/app.rs ─────────────────────────────┐
-│ ▼ src/             │  12 │ fn main() {         fn main() {   │
-│   > app.rs      M  │  13 │-    old_call();                    │
-│     config.rs   M  │  14 │+                    new_call();    │
-├────────────────────┤  15 │ }                   }              │
-│                    │                                          │
-├─ PRs (2) ──────────┴──────────────────────────────────────────┤
-│●  #42 │ you        │ Add feature                     │  today │
-│ ◆ #38 │ teammate   │ Fix bug                         │     2d │
-└───────────────────────────────────────────────────────────────┘
-```
 
 ## Install
 
