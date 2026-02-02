@@ -98,10 +98,12 @@ pub struct DiffStats {
 /// Timeline position for viewing PR history
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimelinePosition {
-    /// View diff at N commits before HEAD (0 = HEAD)
-    Commit(usize),
-    /// View only uncommitted changes (working tree vs HEAD)
+    /// View all changes: base → working tree (default, original behavior)
     #[default]
+    All,
+    /// View committed changes up to HEAD~N: base → HEAD~N
+    Commit(usize),
+    /// View only uncommitted changes: HEAD → working tree
     Uncommitted,
 }
 
@@ -109,7 +111,8 @@ impl TimelinePosition {
     /// Move back in time (towards older commits)
     pub fn back(self, max_commits: usize) -> Self {
         match self {
-            Self::Uncommitted => Self::Commit(0),
+            Self::All => Self::Commit(0),        // all → HEAD
+            Self::Uncommitted => Self::All,      // wip → all
             Self::Commit(n) if n < max_commits => Self::Commit(n + 1),
             other => other,
         }
@@ -118,8 +121,9 @@ impl TimelinePosition {
     /// Move forward in time (towards uncommitted)
     pub fn forward(self) -> Self {
         match self {
-            Self::Commit(0) => Self::Uncommitted,
+            Self::Commit(0) => Self::All,        // HEAD → all
             Self::Commit(n) => Self::Commit(n - 1),
+            Self::All => Self::Uncommitted,      // all → wip
             Self::Uncommitted => Self::Uncommitted,
         }
     }
@@ -127,6 +131,7 @@ impl TimelinePosition {
     /// Get display label
     pub fn label(&self) -> String {
         match self {
+            Self::All => "all".to_string(),
             Self::Uncommitted => "wip".to_string(),
             Self::Commit(0) => "HEAD".to_string(),
             Self::Commit(n) => format!("-{}", n),

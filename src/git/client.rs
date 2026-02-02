@@ -432,9 +432,19 @@ impl GitClient {
         opts.pathspec(path);
 
         match position {
-            TimelinePosition::Uncommitted => {
-                // Base to working tree (includes all changes)
+            TimelinePosition::All => {
+                // Base to working tree (all changes, original behavior)
                 let diff = self.repo.diff_tree_to_workdir(Some(&base_tree), Some(&mut opts))?;
+                let result = self.diff_to_string(&diff)?;
+                if result.is_empty() {
+                    return self.format_new_file(path);
+                }
+                Ok(result)
+            }
+            TimelinePosition::Uncommitted => {
+                // HEAD to working tree (uncommitted only)
+                let head_tree = self.repo.head()?.peel_to_tree()?;
+                let diff = self.repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut opts))?;
                 let result = self.diff_to_string(&diff)?;
                 if result.is_empty() {
                     return self.format_new_file(path);
@@ -456,9 +466,19 @@ impl GitClient {
     pub fn status_at_position(&self, position: super::TimelinePosition) -> Result<Vec<StatusEntry>> {
         use super::TimelinePosition;
 
+        log::debug!("status_at_position: {:?}", position);
+
         match position {
-            TimelinePosition::Uncommitted => self.status(),
+            TimelinePosition::All => {
+                // Show all changes: base → working tree (original behavior)
+                self.status()
+            }
+            TimelinePosition::Uncommitted => {
+                // Show ONLY uncommitted changes: HEAD → working tree
+                self.uncommitted_status()
+            }
             TimelinePosition::Commit(offset) => {
+                log::debug!("Getting status at HEAD~{}", offset);
                 let base = match &self.base_branch {
                     Some(b) => b,
                     None => return Ok(vec![]),

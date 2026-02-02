@@ -371,12 +371,17 @@ impl App {
         // Timeline navigation (only in changes mode)
         if self.mode.is_changed_mode() {
             if KeyInput::is_timeline_back(&key) {
-                self.timeline_position = self.timeline_position.back(self.commit_count.saturating_sub(1));
+                let max = self.commit_count.saturating_sub(1);
+                log::debug!("Timeline back: {:?} -> max={}", self.timeline_position, max);
+                self.timeline_position = self.timeline_position.back(max);
+                log::debug!("Timeline now: {:?}", self.timeline_position);
                 self.refresh()?;
                 return Ok(());
             }
             if KeyInput::is_timeline_forward(&key) {
+                log::debug!("Timeline forward: {:?}", self.timeline_position);
                 self.timeline_position = self.timeline_position.forward();
+                log::debug!("Timeline now: {:?}", self.timeline_position);
                 self.refresh()?;
                 return Ok(());
             }
@@ -843,14 +848,17 @@ impl App {
     }
 
     /// Render timeline indicator: ◀ ●─●─●─○─○ ▶
+    /// Order: oldest commits ... HEAD ... all ... wip
     fn render_timeline(&self) -> String {
-        let max_dots = 5.min(self.commit_count + 1); // +1 for uncommitted
+        // Positions: wip(0), all(1), HEAD(2), -1(3), -2(4), etc.
+        let max_dots = 6.min(self.commit_count + 2); // commits + all + wip
         let mut result = String::from("◀ ");
 
         for i in (0..max_dots).rev() {
             let is_current = match self.timeline_position {
                 TimelinePosition::Uncommitted => i == 0,
-                TimelinePosition::Commit(n) => i == n + 1, // +1 because 0 is uncommitted
+                TimelinePosition::All => i == 1,
+                TimelinePosition::Commit(n) => i == n + 2, // +2 because 0=wip, 1=all
             };
 
             if is_current {
