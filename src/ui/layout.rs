@@ -17,6 +17,7 @@ impl Default for AppLayout {
 
 /// Computed layout areas
 pub struct LayoutAreas {
+    pub header: Rect,
     pub file_list: Rect,
     pub pr_info: Rect,
     pub preview: Rect,
@@ -57,8 +58,18 @@ impl AppLayout {
                 ])
                 .split(main_area);
 
+            // Split left column: header (1 row) | file list
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
+                .split(h_chunks[0]);
+
             LayoutAreas {
-                file_list: h_chunks[0],
+                header: left_chunks[0],
+                file_list: left_chunks[1],
                 pr_info,
                 preview: h_chunks[1],
                 status_bar,
@@ -68,15 +79,17 @@ impl AppLayout {
             let v_main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
+                    Constraint::Length(1),
                     Constraint::Percentage(40),
                     Constraint::Percentage(60),
                 ])
                 .split(main_area);
 
             LayoutAreas {
-                file_list: v_main[0],
+                header: v_main[0],
+                file_list: v_main[1],
                 pr_info,
-                preview: v_main[1],
+                preview: v_main[2],
                 status_bar,
             }
         }

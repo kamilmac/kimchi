@@ -661,6 +661,9 @@ impl App {
         let layout = AppLayout::default();
         let areas = layout.compute(area, self.pr_list_panel_state.prs.len());
 
+        // Render header with app name
+        self.render_header(frame, areas.header);
+
         // Render file list with context-aware title
         let file_list_title = self.file_list_title();
         let file_list = FileList::new(colors)
@@ -694,6 +697,18 @@ impl App {
             let input_modal = InputModal::new(colors, &self.input_modal_state);
             frame.render_widget(input_modal, modal_area);
         }
+    }
+
+    fn render_header(&self, frame: &mut Frame, area: Rect) {
+        use ratatui::style::Modifier;
+
+        let logo = "◆─T─I─M─E─C─O─P─◆";
+        let style = ratatui::style::Style::default()
+            .fg(self.config.colors.header)
+            .add_modifier(Modifier::BOLD);
+
+        let line = Line::from(Span::styled(logo, style));
+        frame.render_widget(line, area);
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
