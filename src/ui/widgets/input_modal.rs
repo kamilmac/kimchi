@@ -80,10 +80,11 @@ impl InputModalState {
                 InputResult::Cancelled
             }
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::CONTROL)
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    || key.modifiers.contains(KeyModifiers::CONTROL)
                     || key.modifiers.contains(KeyModifiers::ALT)
                 {
-                    // Ctrl+Enter or Alt+Enter inserts newline
+                    // Shift+Enter, Ctrl+Enter, or Alt+Enter inserts newline
                     let byte_pos = self.input
                         .char_indices()
                         .nth(self.cursor_pos)
@@ -223,7 +224,7 @@ impl<'a> Widget for InputModal<'a> {
             // Show text input area
             let mut lines = vec![
                 Line::from(Span::styled(
-                    "Enter your message (Enter to submit, Esc to cancel):",
+                    "Shift+Enter for newline, Enter to submit, Esc to cancel",
                     self.colors.style_muted(),
                 )),
                 Line::from(""),
