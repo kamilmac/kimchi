@@ -47,20 +47,29 @@ kimchi /path/to/repo
 | `h/l` | Scroll diff horizontally |
 | `g/G` | Top/bottom |
 | `Tab` | Switch panes |
-| `1-3` | Switch mode |
+| `,/.` | Timeline: older/newer |
 | `y` | Copy path |
 | `o` | Open in $EDITOR |
+| `Enter` | Open diff / checkout PR |
 | `?` | Help |
 | `q` | Quit |
 
 **PR actions** (requires `gh`): `a` approve, `x` request changes, `c` comment
 
-## Modes
+## Timeline
 
-| `1` changes | All changes vs base branch. `●` marks uncommitted files |
-|-------------|----------------------------------------------------------|
-| `2` browse | All tracked files |
-| `3` docs | Markdown files only |
+Navigate through your branch history:
+
+```
+○─○─○─✱─◆
+│ │ │ │ └─ all changes (base → head)
+│ │ │ └─── uncommitted changes
+│ │ └───── commit -1
+│ └─────── commit -2
+└───────── commit -3
+```
+
+Use `,` to go back in history, `.` to go forward. See exactly what changed in each commit.
 
 ## License
 
