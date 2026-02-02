@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use git2::{DiffOptions, Repository, StatusOptions};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::types::*;
@@ -52,58 +53,20 @@ impl GitClient {
         None
     }
 
-    /// Get status of changed files
-    pub fn status(&self, mode: DiffMode) -> Result<Vec<StatusEntry>> {
-        match mode {
-            DiffMode::Working => self.working_status(),
-            DiffMode::Branch => self.branch_status(),
-        }
-    }
+    /// Get combined status: branch changes + uncommitted, with uncommitted flag
+    pub fn status(&self) -> Result<Vec<StatusEntry>> {
+        // Get uncommitted files (working tree + index)
+        let uncommitted_paths = self.get_uncommitted_paths()?;
 
-    /// Get uncommitted changes (working tree status)
-    fn working_status(&self) -> Result<Vec<StatusEntry>> {
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true);
-
-        let statuses = self.repo.statuses(Some(&mut opts))?;
-        let mut entries = Vec::new();
-
-        for entry in statuses.iter() {
-            let path = entry.path().unwrap_or("").to_string();
-            let status = entry.status();
-
-            let file_status = if status.is_index_new() || status.is_wt_new() {
-                FileStatus::Added
-            } else if status.is_index_modified() || status.is_wt_modified() {
-                FileStatus::Modified
-            } else if status.is_index_deleted() || status.is_wt_deleted() {
-                FileStatus::Deleted
-            } else if status.is_index_renamed() || status.is_wt_renamed() {
-                FileStatus::Renamed
-            } else {
-                continue;
-            };
-
-            entries.push(StatusEntry {
-                path,
-                status: file_status,
-            });
-        }
-
-        entries.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(entries)
-    }
-
-    /// Get all changes compared to base branch (using merge-base like GitHub PRs)
-    fn branch_status(&self) -> Result<Vec<StatusEntry>> {
+        // Get branch changes (committed vs base)
         let base = match &self.base_branch {
             Some(b) => b,
-            None => return self.working_status(),
+            None => {
+                // No base branch - just show uncommitted
+                return self.uncommitted_status();
+            }
         };
 
-        // Use merge-base to compare only changes since branch diverged
-        // This matches GitHub's PR diff behavior
         let merge_base = self.merge_base_commit(base)?;
         let head_commit = self.repo.head()?.peel_to_commit()?;
 
@@ -113,6 +76,9 @@ impl GitClient {
         let diff = self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)?;
 
         let mut entries = Vec::new();
+        let mut seen_paths = HashSet::new();
+
+        // Add committed changes
         for delta in diff.deltas() {
             let path = delta
                 .new_file()
@@ -129,19 +95,103 @@ impl GitClient {
                 _ => continue,
             };
 
-            entries.push(StatusEntry { path, status });
+            let uncommitted = uncommitted_paths.contains(&path);
+            entries.push(StatusEntry { path: path.clone(), status, uncommitted });
+            seen_paths.insert(path);
         }
 
-        // Also include working tree changes
-        let working = self.working_status()?;
-        for entry in working {
-            if !entries.iter().any(|e| e.path == entry.path) {
-                entries.push(entry);
+        // Add uncommitted-only files (not in branch diff)
+        for path in &uncommitted_paths {
+            if !seen_paths.contains(path) {
+                // Determine status from working tree
+                let status = self.get_file_status(path)?;
+                entries.push(StatusEntry {
+                    path: path.clone(),
+                    status,
+                    uncommitted: true,
+                });
             }
         }
 
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(entries)
+    }
+
+    /// Get paths of uncommitted files
+    fn get_uncommitted_paths(&self) -> Result<HashSet<String>> {
+        let mut opts = StatusOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true);
+
+        let statuses = self.repo.statuses(Some(&mut opts))?;
+        let mut paths = HashSet::new();
+
+        for entry in statuses.iter() {
+            if let Some(path) = entry.path() {
+                paths.insert(path.to_string());
+            }
+        }
+
+        Ok(paths)
+    }
+
+    /// Get status for uncommitted-only files
+    fn uncommitted_status(&self) -> Result<Vec<StatusEntry>> {
+        let mut opts = StatusOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true);
+
+        let statuses = self.repo.statuses(Some(&mut opts))?;
+        let mut entries = Vec::new();
+
+        for entry in statuses.iter() {
+            let path = entry.path().unwrap_or("").to_string();
+            let git_status = entry.status();
+
+            let status = if git_status.is_index_new() || git_status.is_wt_new() {
+                FileStatus::Added
+            } else if git_status.is_index_modified() || git_status.is_wt_modified() {
+                FileStatus::Modified
+            } else if git_status.is_index_deleted() || git_status.is_wt_deleted() {
+                FileStatus::Deleted
+            } else if git_status.is_index_renamed() || git_status.is_wt_renamed() {
+                FileStatus::Renamed
+            } else {
+                continue;
+            };
+
+            entries.push(StatusEntry {
+                path,
+                status,
+                uncommitted: true,
+            });
+        }
+
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
+    }
+
+    /// Get file status from working tree
+    fn get_file_status(&self, path: &str) -> Result<FileStatus> {
+        let mut opts = StatusOptions::new();
+        opts.pathspec(path);
+
+        let statuses = self.repo.statuses(Some(&mut opts))?;
+
+        for entry in statuses.iter() {
+            let git_status = entry.status();
+            if git_status.is_index_new() || git_status.is_wt_new() {
+                return Ok(FileStatus::Added);
+            } else if git_status.is_index_modified() || git_status.is_wt_modified() {
+                return Ok(FileStatus::Modified);
+            } else if git_status.is_index_deleted() || git_status.is_wt_deleted() {
+                return Ok(FileStatus::Deleted);
+            } else if git_status.is_index_renamed() || git_status.is_wt_renamed() {
+                return Ok(FileStatus::Renamed);
+            }
+        }
+
+        Ok(FileStatus::Modified)
     }
 
     /// List all tracked files
@@ -159,6 +209,7 @@ impl GitClient {
                 entries.push(StatusEntry {
                     path,
                     status: FileStatus::Unchanged,
+                    uncommitted: false,
                 });
             }
             git2::TreeWalkResult::Ok
@@ -177,12 +228,28 @@ impl GitClient {
             .collect())
     }
 
-    /// Get diff for a specific file
-    pub fn diff(&self, path: &str, mode: DiffMode) -> Result<String> {
-        match mode {
-            DiffMode::Working => self.working_diff(path),
-            DiffMode::Branch => self.branch_diff(path),
+    /// Get diff for a specific file (always against base branch)
+    pub fn diff(&self, path: &str) -> Result<String> {
+        let base = match &self.base_branch {
+            Some(b) => b,
+            None => return self.working_diff(path),
+        };
+
+        // Use merge-base to compare only changes since branch diverged
+        let merge_base = self.merge_base_commit(base)?;
+        let base_tree = merge_base.tree()?;
+
+        let mut opts = DiffOptions::new();
+        opts.pathspec(path);
+
+        let diff = self.repo.diff_tree_to_workdir(Some(&base_tree), Some(&mut opts))?;
+        let result = self.diff_to_string(&diff)?;
+
+        // If no diff output, file might be new - show as new file
+        if result.is_empty() {
+            return self.format_new_file(path);
         }
+        Ok(result)
     }
 
     fn working_diff(&self, path: &str) -> Result<String> {
@@ -217,35 +284,11 @@ impl GitClient {
         Ok(result)
     }
 
-    fn branch_diff(&self, path: &str) -> Result<String> {
-        let base = match &self.base_branch {
-            Some(b) => b,
-            None => return self.working_diff(path),
-        };
-
-        // Use merge-base to compare only changes since branch diverged
-        // This matches GitHub's PR diff behavior
-        let merge_base = self.merge_base_commit(base)?;
-        let base_tree = merge_base.tree()?;
-
-        let mut opts = DiffOptions::new();
-        opts.pathspec(path);
-
-        let diff = self.repo.diff_tree_to_workdir(Some(&base_tree), Some(&mut opts))?;
-        let result = self.diff_to_string(&diff)?;
-
-        // If no diff output, file might be new - show as new file
-        if result.is_empty() {
-            return self.format_new_file(path);
-        }
-        Ok(result)
-    }
-
     /// Get combined diff for multiple files
-    pub fn diff_files(&self, paths: &[String], mode: DiffMode) -> Result<String> {
+    pub fn diff_files(&self, paths: &[String]) -> Result<String> {
         let mut result = String::new();
         for path in paths {
-            let diff = self.diff(path, mode)?;
+            let diff = self.diff(path)?;
             if !diff.is_empty() {
                 result.push_str(&diff);
                 result.push('\n');
@@ -297,25 +340,18 @@ impl GitClient {
             .with_context(|| format!("Failed to read file: {}", path))
     }
 
-    /// Get diff statistics
-    pub fn diff_stats(&self, mode: DiffMode) -> Result<DiffStats> {
-        let diff = match mode {
-            DiffMode::Working => {
-                self.repo.diff_index_to_workdir(None, None)?
-            }
-            DiffMode::Branch => {
-                let base = match &self.base_branch {
-                    Some(b) => b,
-                    None => return Ok(DiffStats::default()),
-                };
-                // Use diff_tree_to_tree to match branch_status (committed changes only)
-                let merge_base = self.merge_base_commit(base)?;
-                let head_commit = self.repo.head()?.peel_to_commit()?;
-                let base_tree = merge_base.tree()?;
-                let head_tree = head_commit.tree()?;
-                self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)?
-            }
+    /// Get diff statistics (committed changes vs base)
+    pub fn diff_stats(&self) -> Result<DiffStats> {
+        let base = match &self.base_branch {
+            Some(b) => b,
+            None => return Ok(DiffStats::default()),
         };
+
+        let merge_base = self.merge_base_commit(base)?;
+        let head_commit = self.repo.head()?.peel_to_commit()?;
+        let base_tree = merge_base.tree()?;
+        let head_tree = head_commit.tree()?;
+        let diff = self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)?;
 
         let stats = diff.stats()?;
         Ok(DiffStats {
@@ -331,7 +367,6 @@ impl GitClient {
     }
 
     /// Find the merge-base (common ancestor) between HEAD and base branch
-    /// This matches how GitHub compares branches in PR views
     fn merge_base_commit(&self, base: &str) -> Result<git2::Commit<'_>> {
         let base_commit = self.resolve_commit(base)?;
         let head_commit = self.repo.head()?.peel_to_commit()?;

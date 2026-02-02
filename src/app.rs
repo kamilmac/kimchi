@@ -137,14 +137,13 @@ impl App {
         self.files = match self.mode {
             AppMode::Browse => self.git.list_all_files()?,
             AppMode::Docs => self.git.list_doc_files()?,
-            _ => self.git.status(self.mode.diff_mode())?,
+            AppMode::Changes => self.git.status()?,
         };
 
         // Trigger async stats loading
         self.diff_stats = DiffStats::default();
         if self.mode.is_changed_mode() && !self.async_loader.is_stats_loading() {
-            self.async_loader
-                .load_stats(self.repo_path.clone(), self.mode.diff_mode());
+            self.async_loader.load_stats(self.repo_path.clone());
         }
 
         // Update widget states
@@ -559,7 +558,7 @@ impl App {
                 // Directory selected in diff mode - combined diff
                 let diff = self
                     .git
-                    .diff_files(&entry.children, self.mode.diff_mode())
+                    .diff_files(&entry.children)
                     .unwrap_or_default();
                 PreviewContent::FolderDiff {
                     path: entry.path.clone(),
@@ -578,7 +577,7 @@ impl App {
                 // Changed mode - diff with syntax highlighting
                 let diff = self
                     .git
-                    .diff(&entry.path, self.mode.diff_mode())
+                    .diff(&entry.path)
                     .unwrap_or_default();
                 let content = PreviewContent::FileDiff {
                     path: entry.path.clone(),

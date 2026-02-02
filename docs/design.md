@@ -99,7 +99,7 @@ Background tasks are managed by `AsyncLoader` module:
 - [x] Yank path (y to copy file path to clipboard)
 - [x] Open in editor (o to open in $EDITOR with line number)
 - [x] Help modal with keybindings
-- [x] Unified mode system with 4 modes
+- [x] Unified mode system with 3 modes
 - [x] File content viewer for browse mode
 - [x] PR comments - inline comments in diff view
 - [x] Folder selection - combined diff for directories
@@ -117,10 +117,9 @@ Background tasks are managed by `AsyncLoader` module:
 
 | Key | Mode | Description |
 |-----|------|-------------|
-| 1 | ChangedWorking | Uncommitted changes (`git diff`) |
-| 2 | ChangedBranch | All changes vs base branch (`git diff <base>`) - default |
-| 3 | Browse | All tracked files in repository |
-| 4 | Docs | Markdown files only |
+| 1 | Changes | All changes vs base branch. `●` marks uncommitted files - default |
+| 2 | Browse | All tracked files in repository |
+| 3 | Docs | Markdown files only |
 
 Press `m` to cycle through modes.
 
@@ -294,21 +293,16 @@ pub enum FileStatus {
     Modified, Added, Deleted, Renamed, Untracked, Unchanged
 }
 
-pub enum DiffMode {
-    Working,  // git diff
-    Branch,   // git diff <base>
-}
-
 pub enum AppMode {
-    ChangedWorking,  // Mode 1
-    ChangedBranch,   // Mode 2
-    Browse,          // Mode 3
-    Docs,            // Mode 4
+    Changes,  // Mode 1 - all changes vs base, ● marks uncommitted
+    Browse,   // Mode 2 - all tracked files
+    Docs,     // Mode 3 - markdown files only
 }
 
 pub struct StatusEntry {
     pub path: String,
     pub status: FileStatus,
+    pub uncommitted: bool,  // true if file has uncommitted changes
 }
 
 pub struct Commit {
@@ -375,10 +369,11 @@ Uses gh CLI for GitHub API access:
 
 ## File Watching
 
-Watches `.git/index` for changes using notify crate:
+Watches repository recursively using notify crate with gitignore filtering:
 
-- Debounced at 500ms to avoid excessive refreshes
-- Triggers FileChanged event on git operations
+- Debounced at 300ms to avoid excessive refreshes
+- Filters out paths matching .gitignore patterns
+- Triggers FileChanged event on file modifications
 - Auto-refreshes file list and diff
 
 ## Configuration

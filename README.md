@@ -47,7 +47,7 @@ kimchi /path/to/repo
 | `h/l` | Scroll diff horizontally |
 | `g/G` | Top/bottom |
 | `Tab` | Switch panes |
-| `1-4` | Switch mode |
+| `1-3` | Switch mode |
 | `y` | Copy path |
 | `o` | Open in $EDITOR |
 | `?` | Help |
@@ -57,11 +57,10 @@ kimchi /path/to/repo
 
 ## Modes
 
-| `1` working | Uncommitted changes |
-|-------------|---------------------|
-| `2` branch | Changes vs base branch |
-| `3` browse | All tracked files |
-| `4` docs | Markdown files |
+| `1` changes | All changes vs base branch. `●` marks uncommitted files |
+|-------------|----------------------------------------------------------|
+| `2` browse | All tracked files |
+| `3` docs | Markdown files only |
 
 ## License
 

@@ -6,7 +6,7 @@
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
-use crate::git::{DiffMode, DiffStats, GitClient};
+use crate::git::{DiffStats, GitClient};
 use crate::github::{GitHubClient, PrInfo, PrSummary};
 
 /// Manages async loading of PR and git data
@@ -69,7 +69,7 @@ impl AsyncLoader {
     }
 
     /// Spawn background thread to load diff stats
-    pub fn load_stats(&mut self, repo_path: String, mode: DiffMode) {
+    pub fn load_stats(&mut self, repo_path: String) {
         if self.stats_loading {
             return;
         }
@@ -80,7 +80,7 @@ impl AsyncLoader {
 
         thread::spawn(move || {
             if let Ok(git) = GitClient::open(&repo_path) {
-                match git.diff_stats(mode) {
+                match git.diff_stats() {
                     Ok(stats) => {
                         let _ = tx.send(stats);
                     }

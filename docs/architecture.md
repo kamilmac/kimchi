@@ -195,7 +195,7 @@ src/
 ├── config.rs            # Configuration, colors, layout settings
 ├── git/
 │   ├── mod.rs           # Git module exports
-│   ├── types.rs         # Git data structures (FileStatus, DiffMode, AppMode)
+│   ├── types.rs         # Git data structures (FileStatus, AppMode, StatusEntry)
 │   └── client.rs        # Git operations using libgit2
 ├── github/
 │   └── mod.rs           # GitHub API client using gh CLI (~500 lines)
@@ -218,18 +218,20 @@ src/
 
 ```
 ┌─────────────────┐
-│   .git/index    │
-│   (file)        │
+│   Repository    │
+│   (recursive)   │
+│   + .gitignore  │
 └────────┬────────┘
          │
          │ notify crate watches
          ▼
 ┌─────────────────┐
 │   Debouncer     │
-│   (500ms)       │
+│   (300ms)       │
 └────────┬────────┘
          │
          │ DebouncedEventKind::Any
+         │ (filtered by .gitignore)
          ▼
 ┌─────────────────┐
 │  EventHandler   │
@@ -253,26 +255,24 @@ src/
 ```
                     ┌─────────────────┐
                     │                 │
-         ┌─────────>│ ChangedWorking  │<─────────┐
+         ┌─────────>│    Changes      │<─────────┐
          │          │   (Mode 1)      │          │
-         │          │  git diff       │          │
+         │          │ All changes vs  │          │
+         │          │ base branch     │          │
+         │          │ ● = uncommitted │          │
          │          └────────┬────────┘          │
          │                   │                   │
     press 1             press m              press 1
          │                   │                   │
          │                   ▼                   │
-┌────────┴────────┐  ┌───────────────┐  ┌───────┴────────┐
-│                 │  │               │  │                │
-│     Docs        │  │ ChangedBranch │──│    Browse      │
-│   (Mode 4)      │  │   (Mode 2)    │  │   (Mode 3)     │
-│                 │  │  git diff     │  │                │
-│  *.md files     │  │  <base>       │  │  All files     │
-│                 │  │               │  │                │
-└─────────────────┘  └───────────────┘  └────────────────┘
-         ▲                   │                   ▲
-         │              press m                  │
-         │                   │                   │
-         └───────────────────┴───────────────────┘
+┌────────┴────────┐                     ┌───────┴────────┐
+│                 │                     │                │
+│     Docs        │◄───────────────────►│    Browse      │
+│   (Mode 3)      │      press m        │   (Mode 2)     │
+│                 │                     │                │
+│  *.md files     │                     │  All files     │
+│                 │                     │                │
+└─────────────────┘                     └────────────────┘
 ```
 
 ## Key Input Handling

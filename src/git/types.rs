@@ -35,67 +35,47 @@ impl fmt::Display for FileStatus {
 pub struct StatusEntry {
     pub path: String,
     pub status: FileStatus,
-}
-
-/// Diff mode - what to compare against
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DiffMode {
-    /// Uncommitted changes only (git diff)
-    Working,
-    /// All changes vs base branch (git diff <base>)
-    #[default]
-    Branch,
+    /// True if file has uncommitted changes
+    pub uncommitted: bool,
 }
 
 /// Application mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppMode {
-    /// Show uncommitted changes (mode 1)
-    ChangedWorking,
-    /// Show all changes vs base branch (mode 2) - default
+    /// Show all changes vs base branch + uncommitted (mode 1) - default
     #[default]
-    ChangedBranch,
-    /// Browse all files (mode 3)
+    Changes,
+    /// Browse all files (mode 2)
     Browse,
-    /// Browse docs/markdown only (mode 4)
+    /// Browse docs/markdown only (mode 3)
     Docs,
 }
 
 impl AppMode {
     pub fn next(self) -> Self {
         match self {
-            Self::ChangedWorking => Self::ChangedBranch,
-            Self::ChangedBranch => Self::Browse,
+            Self::Changes => Self::Browse,
             Self::Browse => Self::Docs,
-            Self::Docs => Self::ChangedWorking,
+            Self::Docs => Self::Changes,
         }
     }
 
     pub fn from_number(n: u8) -> Option<Self> {
         match n {
-            1 => Some(Self::ChangedWorking),
-            2 => Some(Self::ChangedBranch),
-            3 => Some(Self::Browse),
-            4 => Some(Self::Docs),
+            1 => Some(Self::Changes),
+            2 => Some(Self::Browse),
+            3 => Some(Self::Docs),
             _ => None,
         }
     }
 
-    pub fn diff_mode(&self) -> DiffMode {
-        match self {
-            Self::ChangedWorking => DiffMode::Working,
-            _ => DiffMode::Branch,
-        }
-    }
-
     pub fn is_changed_mode(&self) -> bool {
-        matches!(self, Self::ChangedWorking | Self::ChangedBranch)
+        matches!(self, Self::Changes)
     }
 
     pub fn short_name(&self) -> &'static str {
         match self {
-            Self::ChangedWorking => "working",
-            Self::ChangedBranch => "branch",
+            Self::Changes => "changes",
             Self::Browse => "browse",
             Self::Docs => "docs",
         }

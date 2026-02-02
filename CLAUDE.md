@@ -38,17 +38,16 @@ Terminal Event → EventHandler thread → App.handle_key()
 - `src/event.rs` - Event handler thread, key input helpers
 - `src/config.rs` - Colors, layout config, timing
 - `src/git/client.rs` - GitClient with libgit2
-- `src/git/types.rs` - FileStatus, DiffMode, AppMode enums
+- `src/git/types.rs` - FileStatus, AppMode enums, StatusEntry
 - `src/ui/widgets/file_list.rs` - Tree view with directory structure
 - `src/ui/widgets/diff_view.rs` - Side-by-side diff with inline comments
 
 ### Modes
 
 Press `m` to cycle through modes, or use number keys:
-- `1` - changed:working (uncommitted changes)
-- `2` - changed:branch (all changes vs base)
-- `3` - browse (all tracked files)
-- `4` - docs (markdown files only)
+- `1` - changes (all changes vs base branch, `●` marks uncommitted)
+- `2` - browse (all tracked files)
+- `3` - docs (markdown files only)
 
 ### Adding a Widget
 

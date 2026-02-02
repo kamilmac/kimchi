@@ -19,6 +19,7 @@ pub struct TreeEntry {
     pub is_root: bool,
     pub depth: usize,
     pub status: FileStatus,
+    pub uncommitted: bool,
     pub collapsed: bool,
     pub children: Vec<String>,
     pub has_comments: bool,
@@ -174,6 +175,7 @@ fn build_tree(
         is_root: true,
         depth: 0,
         status: FileStatus::Unchanged,
+        uncommitted: false,
         collapsed: collapsed.contains(""),
         children: all_paths,
         has_comments: false,
@@ -268,6 +270,16 @@ fn flatten_tree(
             has_comments.get(&node.path).copied().unwrap_or(false)
         };
 
+        // Check uncommitted status
+        let uncommitted = if node.is_dir {
+            // For directories, check if any child is uncommitted
+            children.iter().any(|child_path| {
+                files.iter().any(|f| &f.path == child_path && f.uncommitted)
+            })
+        } else {
+            files.iter().any(|f| f.path == node.path && f.uncommitted)
+        };
+
         entries.push(TreeEntry {
             display: node.name.clone(),
             path: node.path.clone(),
@@ -275,6 +287,7 @@ fn flatten_tree(
             is_root: false,
             depth,
             status: node.status,
+            uncommitted,
             collapsed: is_collapsed,
             children,
             has_comments: node_has_comments,
@@ -416,6 +429,12 @@ fn render_entry(entry: &TreeEntry, selected: bool, colors: &Colors) -> Line<'sta
         };
         spans.push(Span::raw(" ".to_string()));
         spans.push(Span::styled(entry.status.to_string(), status_style));
+    }
+
+    // Uncommitted indicator
+    if entry.uncommitted {
+        spans.push(Span::raw(" ".to_string()));
+        spans.push(Span::styled("●".to_string(), colors.style_modified()));
     }
 
     // Comment indicator
