@@ -35,6 +35,12 @@ pub struct Colors {
     pub status_bar_text: Color,
     pub comment: Color,
     pub comment_bg: Color,
+    // Mode indicator colors (Vim-style)
+    pub mode_working_bg: Color,
+    pub mode_branch_bg: Color,
+    pub mode_browse_bg: Color,
+    pub mode_docs_bg: Color,
+    pub mode_text: Color,
 }
 
 impl Default for Colors {
@@ -55,6 +61,12 @@ impl Default for Colors {
             status_bar_text: Color::Rgb(205, 214, 244), // Text
             comment: Color::Rgb(249, 226, 175),   // Yellow for PR comments
             comment_bg: Color::Rgb(45, 40, 30),     // Warm dark background for comments
+            // Mode indicator colors (Vim-style, Catppuccin)
+            mode_working_bg: Color::Rgb(250, 179, 135),  // Peach - uncommitted changes
+            mode_branch_bg: Color::Rgb(137, 180, 250),   // Blue - branch diff (default)
+            mode_browse_bg: Color::Rgb(166, 227, 161),   // Green - browsing files
+            mode_docs_bg: Color::Rgb(203, 166, 247),     // Mauve - documentation
+            mode_text: Color::Rgb(30, 30, 46),           // Base (dark) - text on colored bg
         }
     }
 }
@@ -96,6 +108,19 @@ impl Colors {
         Style::default()
             .bg(self.status_bar)
             .fg(self.status_bar_text)
+    }
+
+    pub fn style_mode_indicator(&self, mode: &crate::git::AppMode) -> Style {
+        let bg = match mode {
+            crate::git::AppMode::ChangedWorking => self.mode_working_bg,
+            crate::git::AppMode::ChangedBranch => self.mode_branch_bg,
+            crate::git::AppMode::Browse => self.mode_browse_bg,
+            crate::git::AppMode::Docs => self.mode_docs_bg,
+        };
+        Style::default()
+            .bg(bg)
+            .fg(self.mode_text)
+            .add_modifier(Modifier::BOLD)
     }
 }
 

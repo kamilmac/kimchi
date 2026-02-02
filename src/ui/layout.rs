@@ -25,21 +25,22 @@ pub struct LayoutAreas {
 
 impl AppLayout {
     pub fn compute(&self, area: Rect) -> LayoutAreas {
-        // Reserve space for status bar
-        let main_chunks = Layout::default()
+        // Split: main content | PR panel | status bar
+        let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),
+                Constraint::Min(10),
+                Constraint::Length(12), // PR panel height (2 lines per PR, ~5 PRs visible)
                 Constraint::Length(1),
             ])
             .split(area);
 
-        let main_area = main_chunks[0];
-        let status_bar = main_chunks[1];
+        let main_area = v_chunks[0];
+        let pr_info = v_chunks[1];
+        let status_bar = v_chunks[2];
 
         if area.width >= self.breakpoint {
-            // Wide layout: left column (files + commits) | right (preview)
-            // Calculate left width as 20% clamped between 40 and 64
+            // Wide layout: file list | preview
             let left_width = ((main_area.width as u32 * self.left_ratio as u32) / 100)
                 .clamp(40, 64) as u16;
             let h_chunks = Layout::default()
@@ -50,36 +51,26 @@ impl AppLayout {
                 ])
                 .split(main_area);
 
-            // Split left column into files and PR list
-            let left_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(5),
-                    Constraint::Length(22), // PR list window height (2 lines per PR)
-                ])
-                .split(h_chunks[0]);
-
             LayoutAreas {
-                file_list: left_chunks[0],
-                pr_info: left_chunks[1],
+                file_list: h_chunks[0],
+                pr_info,
                 preview: h_chunks[1],
                 status_bar,
             }
         } else {
             // Narrow layout: stacked
-            let v_chunks = Layout::default()
+            let v_main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Percentage(30),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(50),
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(60),
                 ])
                 .split(main_area);
 
             LayoutAreas {
-                file_list: v_chunks[0],
-                pr_info: v_chunks[1],
-                preview: v_chunks[2],
+                file_list: v_main[0],
+                pr_info,
+                preview: v_main[1],
                 status_bar,
             }
         }

@@ -745,43 +745,51 @@ impl App {
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
         let colors = &self.config.colors;
 
-        let mut spans = vec![];
+        // Left side content
+        let mut left_spans = vec![];
 
         // Branch
-        spans.push(Span::styled(
+        left_spans.push(Span::styled(
             format!(" {} ", self.branch),
             colors.style_status_bar(),
         ));
 
-        // Mode
-        spans.push(Span::styled(
-            format!(" [{}] ", self.mode),
-            colors.style_status_bar(),
-        ));
-
         // File count
-        spans.push(Span::styled(
+        left_spans.push(Span::styled(
             format!(" {} files ", self.files.len()),
             colors.style_status_bar(),
         ));
 
         // Diff stats
         if self.mode.is_changed_mode() && (self.diff_stats.added > 0 || self.diff_stats.removed > 0) {
-            spans.push(Span::styled(
+            left_spans.push(Span::styled(
                 format!(" +{} -{} ", self.diff_stats.added, self.diff_stats.removed),
                 colors.style_status_bar(),
             ));
         }
 
-        // Pad to fill width
-        let content_width: usize = spans.iter().map(|s| s.content.len()).sum();
-        let padding = area.width as usize - content_width.min(area.width as usize);
-        spans.push(Span::styled(
+        // Right side: mode indicator (Vim-style)
+        let mode_text = format!(" {} ", self.mode.short_name().to_uppercase());
+        let mode_width = mode_text.len();
+
+        // Calculate padding between left and right
+        let left_width: usize = left_spans.iter().map(|s| s.content.len()).sum();
+        let padding = (area.width as usize)
+            .saturating_sub(left_width)
+            .saturating_sub(mode_width);
+
+        left_spans.push(Span::styled(
             " ".repeat(padding),
             colors.style_status_bar(),
         ));
 
-        let line = Line::from(spans);
+        // Mode indicator with colored background
+        left_spans.push(Span::styled(
+            mode_text,
+            colors.style_mode_indicator(&self.mode),
+        ));
+
+        let line = Line::from(left_spans);
         frame.render_widget(line, area);
     }
 }
