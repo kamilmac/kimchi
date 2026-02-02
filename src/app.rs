@@ -700,15 +700,19 @@ impl App {
     }
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
-        use ratatui::style::Modifier;
+        use ratatui::style::{Color, Modifier};
+        use ratatui::layout::Alignment;
+        use ratatui::widgets::Paragraph;
 
         let logo = "◆─T─I─M─E─C─O─P─◆";
+        let timecop_green = Color::Rgb(150, 255, 170);
         let style = ratatui::style::Style::default()
-            .fg(self.config.colors.header)
+            .fg(timecop_green)
             .add_modifier(Modifier::BOLD);
 
-        let line = Line::from(Span::styled(logo, style));
-        frame.render_widget(line, area);
+        let paragraph = Paragraph::new(Span::styled(logo, style))
+            .alignment(Alignment::Center);
+        frame.render_widget(paragraph, area);
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
