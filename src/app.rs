@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use crate::async_loader::AsyncLoader;
 use crate::config::Config;
 use crate::event::KeyInput;
-use crate::git::{AppMode, DiffStats, GitClient, StatusEntry, TimelinePosition};
+use crate::git::{DiffStats, GitClient, StatusEntry, TimelinePosition};
 use crate::github::{GitHubClient, PrInfo};
 use crate::ui::{
     centered_rect, AppLayout, DiffView, DiffViewState, FileList, FileListState, HelpModal,
@@ -63,7 +63,6 @@ pub struct App {
     repo_path: String,
 
     // State
-    pub mode: AppMode,
     pub focused: FocusedWindow,
     pub show_help: bool,
     pub pending_command: AppCommand,
@@ -104,7 +103,6 @@ impl App {
             git,
             github,
             repo_path: path.to_string(),
-            mode: AppMode::default(),
             focused: FocusedWindow::FileList,
             show_help: false,
             pending_command: AppCommand::None,
@@ -140,17 +138,13 @@ impl App {
         // Update commit count for timeline
         self.commit_count = self.git.commit_count_since_base().unwrap_or(0);
 
-        // Load files based on mode and timeline position
-        self.files = match self.mode {
-            AppMode::Browse => self.git.list_all_files()?,
-            AppMode::Docs => self.git.list_doc_files()?,
-            AppMode::Changes => self.git.status_at_position(self.timeline_position)?,
-        };
+        // Load files based on timeline position
+        self.files = self.git.status_at_position(self.timeline_position)?;
 
-        // Trigger async stats loading
-        self.diff_stats = DiffStats::default();
-        if self.mode.is_changed_mode() && !self.async_loader.is_stats_loading() {
-            self.async_loader.load_stats(self.repo_path.clone());
+        // Compute full diff stats only on branch change (not on timeline change)
+        if branch_changed || self.diff_stats.added == 0 && self.diff_stats.removed == 0 {
+            self.diff_stats = self.git.diff_stats_at_position(TimelinePosition::FullDiff)
+                .unwrap_or_default();
         }
 
         // Update widget states
@@ -206,11 +200,6 @@ impl App {
     pub fn handle_tick(&mut self) {
         let pr_poll_interval = self.config.timing.pr_poll_interval;
 
-        // Poll for completed stats loading
-        if let Some(stats) = self.async_loader.poll_stats() {
-            self.diff_stats = stats;
-        }
-
         // Poll for completed PR list loading
         if let Some(prs) = self.async_loader.poll_pr_list() {
             self.pr_list_panel_state.set_prs(prs);
@@ -244,26 +233,6 @@ impl App {
         let should_load_pr_list = self.last_pr_list_poll.elapsed() >= pr_poll_interval;
         if should_load_pr_list && !self.async_loader.is_pr_list_loading() {
             self.async_loader.load_pr_list();
-        }
-    }
-
-    /// Apply default settings when switching modes
-    fn apply_mode_defaults(&mut self, old_mode: AppMode) {
-        let entering_browse = (self.mode == AppMode::Browse || self.mode == AppMode::Docs)
-            && old_mode != AppMode::Browse
-            && old_mode != AppMode::Docs;
-
-        let leaving_browse = (old_mode == AppMode::Browse || old_mode == AppMode::Docs)
-            && self.mode != AppMode::Browse
-            && self.mode != AppMode::Docs;
-
-        if entering_browse {
-            // Collapse folders at configured depth
-            let depth = self.config.layout.browse_collapse_depth;
-            self.file_list_state.collapse_at_depth(depth);
-        } else if leaving_browse {
-            // Expand all when leaving browse mode
-            self.file_list_state.expand_all();
         }
     }
 
@@ -345,46 +314,21 @@ impl App {
             return Ok(());
         }
 
-        if KeyInput::is_mode_cycle(&key) {
-            let old_mode = self.mode;
-            self.mode = self.mode.next();
-            self.refresh()?;
-            self.apply_mode_defaults(old_mode);
-            return Ok(());
-        }
-
-        if let Some(n) = KeyInput::get_mode_number(&key) {
-            if let Some(mode) = AppMode::from_number(n) {
-                let old_mode = self.mode;
-                self.mode = mode;
-                self.refresh()?;
-                self.apply_mode_defaults(old_mode);
-            }
-            return Ok(());
-        }
-
         if KeyInput::is_yank(&key) {
             self.yank_path();
             return Ok(());
         }
 
-        // Timeline navigation (only in changes mode)
-        if self.mode.is_changed_mode() {
-            if KeyInput::is_timeline_back(&key) {
-                let max = self.commit_count.saturating_sub(1);
-                log::debug!("Timeline back: {:?} -> max={}", self.timeline_position, max);
-                self.timeline_position = self.timeline_position.back(max);
-                log::debug!("Timeline now: {:?}", self.timeline_position);
-                self.refresh()?;
-                return Ok(());
-            }
-            if KeyInput::is_timeline_forward(&key) {
-                log::debug!("Timeline forward: {:?}", self.timeline_position);
-                self.timeline_position = self.timeline_position.forward();
-                log::debug!("Timeline now: {:?}", self.timeline_position);
-                self.refresh()?;
-                return Ok(());
-            }
+        // Timeline navigation: , goes to next (older), . goes to prev (newer)
+        if KeyInput::is_timeline_next(&key) {
+            self.timeline_position = self.timeline_position.next(self.commit_count);
+            self.refresh()?;
+            return Ok(());
+        }
+        if KeyInput::is_timeline_prev(&key) {
+            self.timeline_position = self.timeline_position.prev();
+            self.refresh()?;
+            return Ok(());
         }
 
         // 'o' key is context-specific
@@ -577,14 +521,9 @@ impl App {
 
         let content = if let Some(entry) = self.file_list_state.selected() {
             if entry.is_root {
-                // Root selected - show empty or PR summary
-                PreviewContent::Empty
-            } else if entry.is_dir && (self.mode == AppMode::Browse || self.mode == AppMode::Docs) {
-                // Directory selected in browse/docs mode - show empty
                 PreviewContent::Empty
             } else if entry.is_dir {
-                // Directory selected in diff mode - combined diff
-                // TODO: diff_files doesn't support timeline yet
+                // Directory selected - combined diff
                 let diff = self
                     .git
                     .diff_files(&entry.children)
@@ -593,17 +532,8 @@ impl App {
                     path: entry.path.clone(),
                     content: diff,
                 }
-            } else if self.mode == AppMode::Browse || self.mode == AppMode::Docs {
-                // Browse/docs mode - file content with syntax highlighting
-                let file_content = self.git.read_file(&entry.path).unwrap_or_default();
-                let content = PreviewContent::FileContent {
-                    path: entry.path.clone(),
-                    content: file_content,
-                };
-                self.diff_view_state.set_content_highlighted(content, &self.highlighter);
-                return;
             } else {
-                // Changed mode - diff with syntax highlighting at timeline position
+                // File selected - diff with syntax highlighting at timeline position
                 let diff = self
                     .git
                     .diff_at_position(&entry.path, self.timeline_position)
@@ -627,7 +557,6 @@ impl App {
             // Get path with line number from diff view
             let path = match &self.diff_view_state.content {
                 PreviewContent::FileDiff { path, .. } => path.clone(),
-                PreviewContent::FileContent { path, .. } => path.clone(),
                 _ => return,
             };
             if let Some(line) = self.diff_view_state.get_current_line_number() {
@@ -732,14 +661,11 @@ impl App {
         let layout = AppLayout::default();
         let areas = layout.compute(area, self.pr_list_panel_state.prs.len());
 
-        // Render file list
+        // Render file list with context-aware title
+        let file_list_title = self.file_list_title();
         let file_list = FileList::new(colors)
             .focused(self.focused == FocusedWindow::FileList)
-            .title(format!(
-                "{} ({})",
-                if self.mode == AppMode::Browse { "Browse" } else { "Files" },
-                self.files.len()
-            ));
+            .title(file_list_title);
         frame.render_stateful_widget(file_list, areas.file_list, &mut self.file_list_state);
 
         // Render PR list panel
@@ -772,113 +698,110 @@ impl App {
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
         let colors = &self.config.colors;
+        let total_width = area.width as usize;
 
-        // Left side content
-        let mut left_spans = vec![];
-
-        // Branch
-        left_spans.push(Span::styled(
-            format!(" {} ", self.branch),
-            colors.style_status_bar(),
-        ));
-
-        // File count
-        left_spans.push(Span::styled(
-            format!(" {} files ", self.files.len()),
-            colors.style_status_bar(),
-        ));
-
-        // Diff stats
-        if self.mode.is_changed_mode() && (self.diff_stats.added > 0 || self.diff_stats.removed > 0) {
-            left_spans.push(Span::styled(
-                format!(" +{} -{} ", format_count(self.diff_stats.added), format_count(self.diff_stats.removed)),
-                colors.style_status_bar(),
-            ));
-        }
-
-        // Uncommitted indicator
-        let uncommitted_count = self.files.iter().filter(|f| f.uncommitted).count();
-        if uncommitted_count > 0 {
-            left_spans.push(Span::styled(
-                format!(" ●{} ", uncommitted_count),
-                colors.style_modified(),
-            ));
-        }
-
-        // Timeline indicator (only in changes mode) - constant width
-        const TIMELINE_WIDTH: usize = 20; // "◀○○○○○○●○▶ current" = ~20 chars
-        let timeline_text = if self.mode.is_changed_mode() {
-            let timeline = self.render_timeline();
-            format!(" {} ", timeline)
+        // Row 1: left=branch (+stats in full diff mode), right=position info
+        let left_content = if matches!(self.timeline_position, TimelinePosition::FullDiff)
+            && (self.diff_stats.added > 0 || self.diff_stats.removed > 0) {
+            format!(" {}  +{} -{} ", self.branch, format_count(self.diff_stats.added), format_count(self.diff_stats.removed))
         } else {
-            " ".repeat(TIMELINE_WIDTH)
+            format!(" {} ", self.branch)
         };
 
-        // Right side: mode indicator (Vim-style)
-        let mode_text = format!(" {} ", self.mode.short_name().to_uppercase());
+        let right_content = match self.timeline_position {
+            TimelinePosition::FullDiff => " all changes (base → head) ".to_string(),
+            TimelinePosition::Wip => " uncommitted changes ".to_string(),
+            TimelinePosition::CommitDiff(n) => {
+                if let Some(msg) = self.timeline_commit_message() {
+                    let max_len = 50;
+                    let truncated = if msg.len() > max_len {
+                        format!("{}...", &msg[..max_len])
+                    } else {
+                        msg
+                    };
+                    format!(" commit -{}: {} ", n, truncated)
+                } else {
+                    format!(" commit -{} ", n)
+                }
+            }
+        };
 
-        // Calculate padding between left and right
-        let right_width = timeline_text.chars().count() + mode_text.len();
-        let left_width: usize = left_spans.iter().map(|s| s.content.chars().count()).sum();
-        let padding = (area.width as usize)
-            .saturating_sub(left_width)
-            .saturating_sub(right_width);
+        let left_width = left_content.chars().count();
+        let right_width = right_content.chars().count();
+        let padding = total_width.saturating_sub(left_width + right_width);
 
-        left_spans.push(Span::styled(
-            " ".repeat(padding),
-            colors.style_status_bar(),
-        ));
+        let row1 = Line::from(vec![
+            Span::styled(left_content, colors.style_status_bar()),
+            Span::styled(" ".repeat(padding), colors.style_status_bar()),
+            Span::styled(right_content, colors.style_status_bar()),
+        ]);
 
-        // Timeline indicator
-        left_spans.push(Span::styled(
-            timeline_text,
-            colors.style_status_bar(),
-        ));
+        // Row 2: centered timeline indicator
+        let timeline = self.render_timeline();
+        let timeline_width = timeline.chars().count();
+        let left_pad = total_width.saturating_sub(timeline_width) / 2;
+        let right_pad = total_width.saturating_sub(timeline_width + left_pad);
 
-        // Mode indicator with colored background
-        left_spans.push(Span::styled(
-            mode_text,
-            colors.style_mode_indicator(&self.mode),
-        ));
+        let row2 = Line::from(vec![
+            Span::styled(" ".repeat(left_pad), colors.style_status_bar()),
+            Span::styled(timeline, colors.style_status_bar()),
+            Span::styled(" ".repeat(right_pad), colors.style_status_bar()),
+        ]);
 
-        let line = Line::from(left_spans);
-        frame.render_widget(line, area);
+        // Render both rows
+        let row1_area = Rect { height: 1, ..area };
+        let row2_area = Rect { y: area.y + 1, height: 1, ..area };
+        frame.render_widget(row1, row1_area);
+        frame.render_widget(row2, row2_area);
     }
 
-    /// Render timeline indicator with constant width
-    /// Order (right to left): wip, current, -1, -2, -3, -4, -5, -6
+    /// Render timeline indicator (right to left: oldest ← newest)
     fn render_timeline(&self) -> String {
-        const NUM_POSITIONS: usize = 8; // wip + current + 6 commits
-        let mut result = String::from("◀");
+        // Only show available positions: full diff + wip + actual commits (max 10)
+        let num_commits = self.commit_count.min(10);
+        let num_positions = 2 + num_commits; // full diff + wip + commits
 
-        // Draw dots from left (oldest) to right (newest)
-        for i in (0..NUM_POSITIONS).rev() {
-            let is_selected = self.timeline_position.display_index() == i;
-            let is_current_pos = i == 1; // "current" is at index 1
-            let is_available = match i {
-                0 => true, // wip always available
-                1 => true, // current always available
-                n => self.commit_count >= n - 1, // -1 needs 1 commit, -2 needs 2, etc.
+        let selected_idx = self.timeline_position.display_index();
+        let mut parts = Vec::new();
+
+        // Build right to left: index 0=full diff on right
+        for i in (0..num_positions).rev() {
+            let is_selected = selected_idx == i;
+            let is_full_diff = i == 0;
+            let is_wip = i == 1;
+
+            let symbol = if is_full_diff {
+                '◆'
+            } else if is_wip {
+                '✱'
+            } else {
+                '○'
             };
 
-            if is_selected {
-                result.push('●');
-            } else if is_current_pos {
-                result.push('◆'); // Diamond for current/base diff position
-            } else if is_available {
-                result.push('○');
+            let part = if is_selected {
+                format!("[{}]", symbol)
             } else {
-                result.push('·');
-            }
+                symbol.to_string()
+            };
+            parts.push(part);
         }
 
-        result.push('▶');
+        parts.join("─")
+    }
 
-        // Pad label to constant width
-        let label = self.timeline_position.label();
-        result.push_str(&format!(" {:>7}", label));
+    /// Generate file list title
+    fn file_list_title(&self) -> String {
+        format!("Files ({})", self.files.len())
+    }
 
-        result
+    /// Get commit message for current timeline position (for status bar)
+    fn timeline_commit_message(&self) -> Option<String> {
+        match self.timeline_position {
+            TimelinePosition::CommitDiff(n) => {
+                self.git.commit_summary_at_offset(n - 1).ok()
+            }
+            _ => None,
+        }
     }
 }
 

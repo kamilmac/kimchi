@@ -31,13 +31,13 @@ impl AppLayout {
             _ => ((pr_count + 2) as u16).min(18),          // border + count, max 16 visible
         };
 
-        // Split: main content | PR panel | status bar
+        // Split: main content | PR panel | status bar (2 rows)
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(10),
                 Constraint::Length(pr_height),
-                Constraint::Length(1),
+                Constraint::Length(2),
             ])
             .split(area);
 
