@@ -763,7 +763,7 @@ impl App {
         // Diff stats
         if self.mode.is_changed_mode() && (self.diff_stats.added > 0 || self.diff_stats.removed > 0) {
             left_spans.push(Span::styled(
-                format!(" +{} -{} ", self.diff_stats.added, self.diff_stats.removed),
+                format!(" +{} -{} ", format_count(self.diff_stats.added), format_count(self.diff_stats.removed)),
                 colors.style_status_bar(),
             ));
         }
@@ -791,5 +791,18 @@ impl App {
 
         let line = Line::from(left_spans);
         frame.render_widget(line, area);
+    }
+}
+
+/// Format large numbers with K/M suffixes
+fn format_count(n: usize) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 10_000 {
+        format!("{}K", n / 1000)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1000.0)
+    } else {
+        n.to_string()
     }
 }
