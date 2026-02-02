@@ -308,10 +308,12 @@ impl GitClient {
                     Some(b) => b,
                     None => return Ok(DiffStats::default()),
                 };
-                // Use merge-base for consistent behavior with branch_diff
+                // Use diff_tree_to_tree to match branch_status (committed changes only)
                 let merge_base = self.merge_base_commit(base)?;
+                let head_commit = self.repo.head()?.peel_to_commit()?;
                 let base_tree = merge_base.tree()?;
-                self.repo.diff_tree_to_workdir(Some(&base_tree), None)?
+                let head_tree = head_commit.tree()?;
+                self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)?
             }
         };
 
