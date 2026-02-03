@@ -25,8 +25,6 @@ cargo build --release
 cp target/release/timecop ~/.local/bin/
 ```
 
-**Windows:** Download from [Releases](https://github.com/kamilmac/timecop/releases).
-
 Needs Git. For PR features (list, approve, comment), install [gh CLI](https://cli.github.com/).
 
 ## Usage
