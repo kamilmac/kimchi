@@ -1,3 +1,5 @@
+mod parser;
+
 use crossterm::event::KeyEvent;
 use ratatui::{
     buffer::Buffer,
@@ -12,7 +14,7 @@ use crate::event::KeyInput;
 use crate::github::PrInfo;
 use crate::ui::Highlighter;
 
-use super::diff_parser::{
+use parser::{
     extract_diff_sides, is_binary, parse_diff,
     parse_hunk_header, parse_pr_details, truncate_or_pad, wrap_text, DiffLine, LineType,
 };
