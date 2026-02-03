@@ -277,6 +277,12 @@ impl App {
             return Ok(());
         }
 
+        // Toggle diff view mode (global - works from any pane)
+        if KeyInput::is_toggle_view_mode(&key) {
+            self.diff_view_state.toggle_view_mode();
+            return Ok(());
+        }
+
         // Tab cycles through all panes
         if KeyInput::is_tab(&key) {
             self.focused = self.focused.next();
