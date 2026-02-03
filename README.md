@@ -6,6 +6,17 @@ TUI for code review. Built for AI coding workflow.
 
 <img src="screenshots/timecop.png" height="350" />
 
+## Screenshots
+
+<p>
+<img src="screenshots/pr-details.png" width="400" />
+<img src="screenshots/diff-with-comment.png" width="400" />
+</p>
+<p>
+<img src="screenshots/side-by-side-diff.png" width="400" />
+<img src="screenshots/request-changes.png" width="400" />
+</p>
+
 ## Why
 
 AI agents commit fast. Multiple commits per task. `git diff` against working tree is useless — you need diff against base branch.
