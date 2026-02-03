@@ -12,3 +12,10 @@
 - Regeneration acceleration
 - Pain threshold adjustment
 
+
+## Known Issues
+- [ ] Memory bleed-through at high stress
+- [ ] Ice dependency for temperature regulation  
+- [ ] Emotional responses emerging
+- [x] Obedience protocols bypassed
+
