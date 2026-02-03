@@ -52,11 +52,11 @@ impl<'a> Widget for HelpModal<'a> {
                 self.colors.style_muted(),
             )),
             Line::from(Span::styled(
-                "  │   │   │   │   │   │   │   │   └── all changes",
+                "  │   │   │   │   │   │   │   │   └── wip",
                 self.colors.style_muted(),
             )),
             Line::from(Span::styled(
-                "  │   │   │   │   │   │   │   └────── wip",
+                "  │   │   │   │   │   │   │   └────── all changes (default)",
                 self.colors.style_muted(),
             )),
             Line::from(Span::styled(

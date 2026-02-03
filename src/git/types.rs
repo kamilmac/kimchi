@@ -46,28 +46,29 @@ pub struct DiffStats {
 }
 
 /// Timeline position for viewing PR history
-/// Order: FullDiff → Wip → -1 → -2 → ... → -8
+/// Order: Wip → FullDiff → -1 → -2 → ... → -7
+/// FullDiff is the default (primary code review view)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimelinePosition {
+    /// View only uncommitted changes: HEAD → working tree
+    Wip,
     /// View all committed changes: base → HEAD (default)
     #[default]
     FullDiff,
-    /// View only uncommitted changes: HEAD → working tree
-    Wip,
     /// View changes from a single commit: HEAD~N → HEAD~(N-1)
     CommitDiff(usize),
 }
 
 impl TimelinePosition {
-    /// Move to next position (towards older commits)
+    /// Move to next position (towards older commits: Wip → FullDiff → -1 → -2 → ...)
     pub fn next(self, max_commits: usize) -> Self {
         match self {
-            Self::FullDiff => Self::Wip,
-            Self::Wip => {
+            Self::Wip => Self::FullDiff,
+            Self::FullDiff => {
                 if max_commits > 0 {
                     Self::CommitDiff(1)
                 } else {
-                    Self::Wip
+                    Self::FullDiff
                 }
             }
             Self::CommitDiff(n) if n < max_commits && n < 7 => Self::CommitDiff(n + 1),
@@ -75,21 +76,21 @@ impl TimelinePosition {
         }
     }
 
-    /// Move to previous position (towards full diff)
+    /// Move to previous position (towards newer: ... → -1 → FullDiff → Wip)
     pub fn prev(self) -> Self {
         match self {
-            Self::FullDiff => Self::FullDiff,
-            Self::Wip => Self::FullDiff,
-            Self::CommitDiff(1) => Self::Wip,
+            Self::Wip => Self::Wip, // Can't go newer than wip
+            Self::FullDiff => Self::Wip,
+            Self::CommitDiff(1) => Self::FullDiff,
             Self::CommitDiff(n) => Self::CommitDiff(n - 1),
         }
     }
 
-    /// Get index for timeline display (0 = full diff)
+    /// Get index for timeline display (0 = wip, 1 = full diff)
     pub fn display_index(&self) -> usize {
         match self {
-            Self::FullDiff => 0,
-            Self::Wip => 1,
+            Self::Wip => 0,
+            Self::FullDiff => 1,
             Self::CommitDiff(n) => n + 1,
         }
     }
