@@ -48,6 +48,11 @@ impl Default for PreviewContent {
     }
 }
 
+/// Minimum width for split view (below this, auto-switch to unified)
+const SPLIT_VIEW_MIN_WIDTH: u16 = 100;
+/// Minimum width change to reset manual mode override
+const RESIZE_THRESHOLD: u16 = 4;
+
 /// Diff view widget state
 pub struct DiffViewState {
     pub content: PreviewContent,
@@ -56,6 +61,10 @@ pub struct DiffViewState {
     pub offset: usize,
     pub pr: Option<PrInfo>,
     pub view_mode: DiffViewMode,
+    /// User manually set the view mode (don't auto-switch)
+    manual_mode: bool,
+    /// Last width seen (for detecting significant resize)
+    last_width: u16,
     current_file: String,
     /// Syntax-highlighted lines for diff mode (left side, indexed by line number)
     highlighted_left: std::collections::HashMap<usize, Vec<(String, Style)>>,
@@ -72,6 +81,8 @@ impl Default for DiffViewState {
             offset: 0,
             pr: None,
             view_mode: DiffViewMode::default(),
+            manual_mode: false,
+            last_width: 0,
             current_file: String::new(),
             highlighted_left: std::collections::HashMap::new(),
             highlighted_right: std::collections::HashMap::new(),
@@ -345,11 +356,33 @@ impl DiffViewState {
         format!("{}%", percent.min(100))
     }
 
-    /// Toggle between split and unified view modes
+    /// Toggle between split and unified view modes (manual override)
     pub fn toggle_view_mode(&mut self) {
         self.view_mode = match self.view_mode {
             DiffViewMode::Split => DiffViewMode::Unified,
             DiffViewMode::Unified => DiffViewMode::Split,
+        };
+        self.manual_mode = true;
+    }
+
+    /// Auto-adjust view mode based on available width (unless user manually set it)
+    pub fn auto_adjust_view_mode(&mut self, width: u16) {
+        // Reset manual mode on significant resize
+        if self.manual_mode && self.last_width > 0 {
+            let diff = (width as i32 - self.last_width as i32).unsigned_abs() as u16;
+            if diff >= RESIZE_THRESHOLD {
+                self.manual_mode = false;
+            }
+        }
+        self.last_width = width;
+
+        if self.manual_mode {
+            return;
+        }
+        self.view_mode = if width < SPLIT_VIEW_MIN_WIDTH {
+            DiffViewMode::Unified
+        } else {
+            DiffViewMode::Split
         };
     }
 
