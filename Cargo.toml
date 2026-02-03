@@ -17,7 +17,7 @@ notify-debouncer-mini = "0.5"
 ignore = "0.4"
 
 # Git operations (native, no shell)
-git2 = "0.19"
+git2 = { version = "0.19", features = ["vendored-openssl"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
