@@ -163,7 +163,7 @@ impl InputModalState {
                 InputResult::Continue
             }
             KeyCode::Right => {
-                if self.cursor_pos < self.input.len() {
+                if self.cursor_pos < self.input.chars().count() {
                     self.cursor_pos += 1;
                 }
                 InputResult::Continue
@@ -173,7 +173,7 @@ impl InputModalState {
                 InputResult::Continue
             }
             KeyCode::End => {
-                self.cursor_pos = self.input.len();
+                self.cursor_pos = self.input.chars().count();
                 InputResult::Continue
             }
             _ => InputResult::Continue,
@@ -243,55 +243,51 @@ impl<'a> Widget for InputModal<'a> {
             let text_style = ratatui::style::Style::reset().fg(self.colors.text);
             let cursor_style = ratatui::style::Style::reset().fg(self.colors.text).add_modifier(ratatui::style::Modifier::REVERSED);
 
+            // Single pass: build lines with cursor
             if input.is_empty() {
-                // Empty input - just show cursor
                 lines.push(Line::from(Span::styled(" ", cursor_style)));
             } else {
-                // Insert cursor into text
                 let chars: Vec<char> = input.chars().collect();
-                let before: String = chars[..cursor_pos.min(chars.len())].iter().collect();
-                let cursor_char = chars.get(cursor_pos).copied().unwrap_or(' ');
-                let after: String = if cursor_pos < chars.len() {
-                    chars[cursor_pos + 1..].iter().collect()
-                } else {
-                    String::new()
-                };
+                let mut line_spans: Vec<Span> = vec![];
+                let mut text_buf = String::new();
 
-                // Split by newlines and render each line
-                let full_text = format!("{}\x00{}", before, after); // marker for cursor position
-                let display_lines: Vec<&str> = full_text.split('\n').collect();
-
-                let mut char_count = 0;
-                for (i, line_text) in display_lines.iter().enumerate() {
-                    let line_start = char_count;
-                    let line_chars: Vec<char> = line_text.chars().filter(|c| *c != '\x00').collect();
-                    let line_len = line_chars.len();
-
-                    if cursor_pos >= line_start && cursor_pos <= line_start + line_len {
-                        // Cursor is on this line
-                        let pos_in_line = cursor_pos - line_start;
-                        let before_cursor: String = line_chars[..pos_in_line.min(line_chars.len())].iter().collect();
-                        let at_cursor = if pos_in_line < line_chars.len() {
-                            line_chars[pos_in_line].to_string()
+                for (i, ch) in chars.iter().enumerate() {
+                    if i == cursor_pos {
+                        // Flush accumulated text
+                        if !text_buf.is_empty() {
+                            line_spans.push(Span::styled(std::mem::take(&mut text_buf), text_style));
+                        }
+                        // Render cursor
+                        if *ch == '\n' {
+                            line_spans.push(Span::styled(" ", cursor_style));
+                            lines.push(Line::from(std::mem::take(&mut line_spans)));
                         } else {
-                            " ".to_string()
-                        };
-                        let after_cursor: String = if pos_in_line < line_chars.len() {
-                            line_chars[pos_in_line + 1..].iter().collect()
-                        } else {
-                            String::new()
-                        };
-
-                        lines.push(Line::from(vec![
-                            Span::styled(before_cursor, text_style),
-                            Span::styled(at_cursor, cursor_style),
-                            Span::styled(after_cursor, text_style),
-                        ]));
+                            line_spans.push(Span::styled(ch.to_string(), cursor_style));
+                        }
+                    } else if *ch == '\n' {
+                        // End of line without cursor
+                        if !text_buf.is_empty() {
+                            line_spans.push(Span::styled(std::mem::take(&mut text_buf), text_style));
+                        }
+                        lines.push(Line::from(std::mem::take(&mut line_spans)));
                     } else {
-                        lines.push(Line::from(Span::styled(line_chars.iter().collect::<String>(), text_style)));
+                        text_buf.push(*ch);
                     }
+                }
 
-                    char_count += line_len + 1; // +1 for newline
+                // Cursor at end of input
+                if cursor_pos == chars.len() {
+                    if !text_buf.is_empty() {
+                        line_spans.push(Span::styled(std::mem::take(&mut text_buf), text_style));
+                    }
+                    line_spans.push(Span::styled(" ", cursor_style));
+                } else if !text_buf.is_empty() {
+                    line_spans.push(Span::styled(text_buf, text_style));
+                }
+
+                // Push final line
+                if !line_spans.is_empty() {
+                    lines.push(Line::from(line_spans));
                 }
             }
 
