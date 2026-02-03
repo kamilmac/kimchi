@@ -90,7 +90,7 @@ impl InputModalState {
                 InputResult::Cancelled
             }
             KeyCode::Enter => {
-                // Enter submits
+                // Enter submits (acts as "y" for confirmations)
                 if let Some(action) = &self.action {
                     if action.needs_body() && self.input.trim().is_empty() {
                         self.error = Some("Message cannot be empty".to_string());
@@ -277,11 +277,9 @@ impl<'a> Widget for InputModal<'a> {
                 Line::from(""),
                 Line::from(vec![
                     Span::styled("Press ", self.colors.style_muted()),
-                    Span::styled("y", self.colors.style_added()),
+                    Span::styled("Enter/y", self.colors.style_added()),
                     Span::styled(" to confirm, ", self.colors.style_muted()),
-                    Span::styled("n", self.colors.style_removed()),
-                    Span::styled(" or ", self.colors.style_muted()),
-                    Span::styled("Esc", self.colors.style_muted()),
+                    Span::styled("n/Esc", self.colors.style_removed()),
                     Span::styled(" to cancel", self.colors.style_muted()),
                 ]),
             ];
