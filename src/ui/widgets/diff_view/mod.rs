@@ -1,3 +1,6 @@
+mod parser;
+
+use crossterm::event::KeyEvent;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,21 +10,20 @@ use ratatui::{
 };
 
 use crate::config::Colors;
+use crate::event::KeyInput;
 use crate::github::PrInfo;
 use crate::ui::Highlighter;
 
-use super::diff_parser::{
+use parser::{
     extract_diff_sides, is_binary, parse_diff,
-    parse_hunk_header, parse_pr_details, truncate_or_pad, wrap_text, DiffLine, LineType,
+    parse_hunk_header, truncate_or_pad, wrap_text, DiffLine, LineType,
 };
+use super::{Action, ReviewActionType};
 
 /// What to show in the diff view
 #[derive(Debug, Clone)]
 pub enum PreviewContent {
     Empty,
-    Loading {
-        message: String,
-    },
     FileDiff {
         path: String,
         content: String,
@@ -30,9 +32,14 @@ pub enum PreviewContent {
         path: String,
         content: String,
     },
-    PrDetails {
-        pr: PrInfo,
-    },
+}
+
+/// Diff view mode: split (side-by-side) or unified (single pane)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DiffViewMode {
+    #[default]
+    Split,
+    Unified,
 }
 
 impl Default for PreviewContent {
@@ -48,6 +55,7 @@ pub struct DiffViewState {
     pub cursor: usize,
     pub offset: usize,
     pub pr: Option<PrInfo>,
+    pub view_mode: DiffViewMode,
     current_file: String,
     /// Syntax-highlighted lines for diff mode (left side, indexed by line number)
     highlighted_left: std::collections::HashMap<usize, Vec<(String, Style)>>,
@@ -63,6 +71,7 @@ impl Default for DiffViewState {
             cursor: 0,
             offset: 0,
             pr: None,
+            view_mode: DiffViewMode::default(),
             current_file: String::new(),
             highlighted_left: std::collections::HashMap::new(),
             highlighted_right: std::collections::HashMap::new(),
@@ -155,16 +164,6 @@ impl DiffViewState {
     fn parse_content(&mut self) {
         let base_lines = match &self.content {
             PreviewContent::Empty => vec![],
-            PreviewContent::Loading { message } => {
-                vec![DiffLine {
-                    left_text: Some(message.clone()),
-                    right_text: None,
-                    left_num: None,
-                    right_num: None,
-                    line_type: LineType::Info,
-                    is_header: true,
-                }]
-            }
             PreviewContent::FileDiff { content, .. } | PreviewContent::FolderDiff { content, .. } => {
                 if is_binary(content) {
                     vec![DiffLine {
@@ -178,9 +177,6 @@ impl DiffViewState {
                 } else {
                     parse_diff(content)
                 }
-            }
-            PreviewContent::PrDetails { pr } => {
-                parse_pr_details(pr)
             }
         };
 
@@ -266,12 +262,8 @@ impl DiffViewState {
     pub fn title(&self) -> String {
         match &self.content {
             PreviewContent::Empty => "Preview".to_string(),
-            PreviewContent::Loading { .. } => "Loading...".to_string(),
             PreviewContent::FileDiff { path, .. } => path.clone(),
             PreviewContent::FolderDiff { path, .. } => format!("{}/", path),
-            PreviewContent::PrDetails { pr } => {
-                format!("PR #{} {}", pr.number, pr.title)
-            }
         }
     }
 
@@ -352,6 +344,68 @@ impl DiffViewState {
         let percent = (self.offset * 100) / self.lines.len().saturating_sub(height.saturating_sub(2)).max(1);
         format!("{}%", percent.min(100))
     }
+
+    /// Toggle between split and unified view modes
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            DiffViewMode::Split => DiffViewMode::Unified,
+            DiffViewMode::Unified => DiffViewMode::Split,
+        };
+    }
+
+    /// Handle key input, return action for App to dispatch
+    /// pr_number is needed for line comments
+    pub fn handle_key(&mut self, key: &KeyEvent, pr_number: Option<u64>) -> Action {
+        // Toggle view mode
+        if KeyInput::is_toggle_view_mode(key) {
+            self.toggle_view_mode();
+            return Action::None;
+        }
+
+        // Line comment
+        if KeyInput::is_comment(key) {
+            if let (Some(pr_num), Some(path), Some(line)) = (
+                pr_number,
+                self.get_current_file().map(|s| s.to_string()),
+                self.get_current_line_number(),
+            ) {
+                return Action::OpenReviewModal(ReviewActionType::LineComment {
+                    pr_number: pr_num,
+                    path,
+                    line: line as u32,
+                });
+            }
+            return Action::None;
+        }
+
+        if KeyInput::is_down(key) {
+            self.move_down();
+            Action::None
+        } else if KeyInput::is_up(key) {
+            self.move_up();
+            Action::None
+        } else if KeyInput::is_fast_down(key) {
+            self.move_down_n(5);
+            Action::None
+        } else if KeyInput::is_fast_up(key) {
+            self.move_up_n(5);
+            Action::None
+        } else if KeyInput::is_page_down(key) {
+            self.page_down(20);
+            Action::None
+        } else if KeyInput::is_page_up(key) {
+            self.page_up(20);
+            Action::None
+        } else if KeyInput::is_top(key) {
+            self.go_top();
+            Action::None
+        } else if KeyInput::is_bottom(key) {
+            self.go_bottom();
+            Action::None
+        } else {
+            Action::Ignored
+        }
+    }
 }
 
 /// Diff view widget
@@ -384,11 +438,16 @@ impl<'a> StatefulWidget for DiffView<'a> {
             self.colors.style_border()
         };
 
+        // Build title with mode indicator and scroll info
+        let mode_indicator = match state.view_mode {
+            DiffViewMode::Split => "[split]",
+            DiffViewMode::Unified => "[unified]",
+        };
         let scroll_info = state.scroll_percent(area.height as usize);
         let title = if scroll_info.is_empty() {
-            state.title()
+            format!("{} {}", state.title(), mode_indicator)
         } else {
-            format!("{} ─── {}", state.title(), scroll_info)
+            format!("{} {} ─── {}", state.title(), mode_indicator, scroll_info)
         };
 
         let block = Block::default()
@@ -428,6 +487,8 @@ impl<'a> StatefulWidget for DiffView<'a> {
 
             let line = if diff_line.is_header {
                 render_header_line(diff_line, is_cursor, self.colors)
+            } else if state.view_mode == DiffViewMode::Unified {
+                render_unified_diff_line(diff_line, is_cursor, self.colors)
             } else if has_diff_highlighting {
                 let left_hl = diff_line.left_num.and_then(|n| state.highlighted_left.get(&n));
                 let right_hl = diff_line.right_num.and_then(|n| state.highlighted_right.get(&n));
@@ -703,6 +764,61 @@ fn render_diff_line(diff_line: &DiffLine, cursor: bool, colors: &Colors, pane_wi
     spans.push(Span::styled(right_num_str, colors.style_muted()));
     spans.push(Span::styled(" ", colors.style_muted()));
     spans.push(Span::styled(right_content, right_style));
+
+    Line::from(spans)
+}
+
+/// Render a diff line in unified mode (single pane, traditional +/- prefix)
+fn render_unified_diff_line(diff_line: &DiffLine, cursor: bool, colors: &Colors) -> Line<'static> {
+    let mut spans = vec![];
+    let num_width = 4;
+
+    // Show appropriate line number and prefix based on line type
+    let (prefix, line_num, text, style) = match diff_line.line_type {
+        LineType::Added => {
+            let num = diff_line.right_num
+                .map(|n| format!("{:>width$}", n, width = num_width))
+                .unwrap_or_else(|| " ".repeat(num_width));
+            let text = diff_line.right_text.as_deref().unwrap_or("");
+            ("+", num, text, colors.style_added())
+        }
+        LineType::Removed => {
+            let num = diff_line.left_num
+                .map(|n| format!("{:>width$}", n, width = num_width))
+                .unwrap_or_else(|| " ".repeat(num_width));
+            let text = diff_line.left_text.as_deref().unwrap_or("");
+            ("-", num, text, colors.style_removed())
+        }
+        LineType::Context => {
+            // For context, prefer right_num (new file line number)
+            let num = diff_line.right_num.or(diff_line.left_num)
+                .map(|n| format!("{:>width$}", n, width = num_width))
+                .unwrap_or_else(|| " ".repeat(num_width));
+            let text = diff_line.right_text.as_deref()
+                .or(diff_line.left_text.as_deref())
+                .unwrap_or("");
+            (" ", num, text, Style::default().fg(colors.text))
+        }
+        _ => {
+            // Headers etc - shouldn't reach here but handle gracefully
+            let num = " ".repeat(num_width);
+            let text = diff_line.left_text.as_deref().unwrap_or("");
+            (" ", num, text, Style::default().fg(colors.text))
+        }
+    };
+
+    let text = text.replace('\t', "    ");
+
+    let content_style = if cursor {
+        style.add_modifier(ratatui::style::Modifier::REVERSED)
+    } else {
+        style
+    };
+
+    spans.push(Span::styled(line_num, colors.style_muted()));
+    spans.push(Span::styled(" ", colors.style_muted()));
+    spans.push(Span::styled(prefix.to_string(), content_style));
+    spans.push(Span::styled(text, content_style));
 
     Line::from(spans)
 }
