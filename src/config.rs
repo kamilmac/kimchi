@@ -131,6 +131,14 @@ impl Colors {
         Style::default().fg(self.border_focused)
     }
 
+    pub fn border_style(&self, focused: bool) -> Style {
+        if focused {
+            self.style_border_focused()
+        } else {
+            self.style_border()
+        }
+    }
+
     pub fn style_status_bar(&self) -> Style {
         Style::default().bg(self.status_bar).fg(self.status_bar_text)
     }

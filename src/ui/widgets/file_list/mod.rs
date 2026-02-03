@@ -379,11 +379,7 @@ impl<'a> StatefulWidget for FileList<'a> {
     type State = FileListState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let border_style = if self.focused {
-            self.colors.style_border_focused()
-        } else {
-            self.colors.style_border()
-        };
+        let border_style = self.colors.border_style(self.focused);
 
         let block = Block::default()
             .borders(Borders::ALL)

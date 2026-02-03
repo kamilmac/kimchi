@@ -14,10 +14,6 @@ pub enum Action {
     /// Key was not handled, pass to parent
     Ignored,
 
-    // Navigation
-    /// Request focus change
-    ChangeFocus(FocusTarget),
-
     // File list actions
     /// File was selected (Enter on file)
     FileSelected(PathBuf),
@@ -25,39 +21,12 @@ pub enum Action {
     // PR list actions
     /// PR was selected
     PrSelected(u64),
-    /// Checkout PR (Enter on PR)
+    /// Checkout PR
     CheckoutPr(u64),
-    /// Open PR in browser
-    OpenPrInBrowser(u64),
 
     // Review actions
     /// Open review modal
     OpenReviewModal(ReviewActionType),
-
-    // Global
-    /// Quit the application
-    Quit,
-    /// Refresh data
-    Refresh,
-    /// Toggle help modal
-    ToggleHelp,
-    /// Yank path to clipboard
-    YankPath,
-    /// Open file in editor
-    OpenInEditor,
-    /// Navigate timeline
-    TimelineNext,
-    TimelinePrev,
-}
-
-/// Focus targets for navigation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusTarget {
-    FileList,
-    PrList,
-    Preview,
-    Next,
-    Prev,
 }
 
 /// Types of review actions

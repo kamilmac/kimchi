@@ -192,11 +192,7 @@ impl<'a> StatefulWidget for PrListPanel<'a> {
     type State = PrListPanelState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let border_style = if self.focused {
-            self.colors.style_border_focused()
-        } else {
-            self.colors.style_border()
-        };
+        let border_style = self.colors.border_style(self.focused);
 
         const SPINNER: [char; 4] = ['◐', '◓', '◑', '◒'];
         let spinner = SPINNER[self.spinner_frame % SPINNER.len()];

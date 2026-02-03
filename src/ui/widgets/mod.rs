@@ -6,7 +6,7 @@ mod input;
 mod pr_details;
 mod pr_list;
 
-pub use action::{Action, FocusTarget, ReviewActionType};
+pub use action::{Action, ReviewActionType};
 pub use diff_view::{DiffView, DiffViewState, PreviewContent};
 pub use file_list::{FileList, FileListState};
 pub use help::HelpModal;

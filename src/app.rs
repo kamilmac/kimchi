@@ -548,32 +548,7 @@ impl App {
         match action {
             Action::None | Action::Ignored => {}
 
-            Action::Quit => {
-                self.running = false;
-            }
-
-            Action::Refresh => {
-                self.refresh()?;
-            }
-
-            Action::ToggleHelp => {
-                self.show_help = !self.show_help;
-            }
-
-            Action::ChangeFocus(target) => {
-                use crate::ui::FocusTarget;
-                self.focused = match target {
-                    FocusTarget::FileList => FocusedWindow::FileList,
-                    FocusTarget::PrList => FocusedWindow::PrList,
-                    FocusTarget::Preview => FocusedWindow::Preview,
-                    FocusTarget::Next => self.focused.next(),
-                    FocusTarget::Prev => self.focused.prev(),
-                };
-                self.on_focus_change();
-            }
-
             Action::FileSelected(_path) => {
-                // Go to preview when file is selected
                 self.focused = FocusedWindow::Preview;
                 self.on_focus_change();
             }
@@ -584,17 +559,12 @@ impl App {
             }
 
             Action::CheckoutPr(pr_number) => {
-                // Show confirmation dialog (action comes from widget's Enter handling)
                 if let Some(pr) = self.pr_list_panel_state.prs.iter().find(|p| p.number == pr_number) {
                     self.input_modal_state.show(ReviewAction::CheckoutPr {
                         pr_number,
                         branch: pr.branch.clone(),
                     });
                 }
-            }
-
-            Action::OpenPrInBrowser(pr_number) => {
-                let _ = self.github.open_pr_in_browser(pr_number);
             }
 
             Action::OpenReviewModal(review_type) => {
@@ -613,24 +583,6 @@ impl App {
                     }
                 };
                 self.input_modal_state.show(review_action);
-            }
-
-            Action::YankPath => {
-                self.yank_path();
-            }
-
-            Action::OpenInEditor => {
-                self.open_in_editor();
-            }
-
-            Action::TimelineNext => {
-                self.timeline_position = self.timeline_position.next(self.commit_count);
-                self.refresh()?;
-            }
-
-            Action::TimelinePrev => {
-                self.timeline_position = self.timeline_position.prev();
-                self.refresh()?;
             }
         }
 

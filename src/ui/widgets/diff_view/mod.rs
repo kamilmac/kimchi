@@ -467,11 +467,7 @@ impl<'a> StatefulWidget for DiffView<'a> {
     type State = DiffViewState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let border_style = if self.focused {
-            self.colors.style_border_focused()
-        } else {
-            self.colors.style_border()
-        };
+        let border_style = self.colors.border_style(self.focused);
 
         // Build title with mode indicator and scroll info
         let mode_indicator = match state.view_mode {
