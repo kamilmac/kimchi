@@ -1,4 +1,5 @@
 use ratatui::style::{Color, Modifier, Style};
+use std::io::{IsTerminal, Read, Write};
 use std::time::Duration;
 
 /// Theme mode
@@ -21,23 +22,9 @@ impl ThemeMode {
             }
         }
 
-        // 2. Check macOS system preference
-        #[cfg(target_os = "macos")]
-        {
-            if let Ok(output) = std::process::Command::new("defaults")
-                .args(["read", "-g", "AppleInterfaceStyle"])
-                .output()
-            {
-                // "Dark" means dark mode is enabled; error/empty means light mode
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if !stdout.trim().eq_ignore_ascii_case("dark") && output.status.success() {
-                    return Self::Light;
-                }
-                if !output.status.success() {
-                    // Command fails when in light mode (key doesn't exist)
-                    return Self::Light;
-                }
-            }
+        // 2. Query terminal background color via OSC 11 (most accurate)
+        if let Some(theme) = Self::detect_from_terminal() {
+            return theme;
         }
 
         // 3. Check COLORFGBG env var (format: "fg;bg" where bg > 8 typically means light)
@@ -54,6 +41,124 @@ impl ThemeMode {
 
         // Default to dark
         Self::Dark
+    }
+
+    /// Query terminal for background color using OSC 11 escape sequence
+    fn detect_from_terminal() -> Option<Self> {
+        use std::os::fd::{AsRawFd, BorrowedFd};
+
+        // Only works on a real terminal
+        let stdin = std::io::stdin();
+        if !stdin.is_terminal() {
+            return None;
+        }
+
+        // Save current terminal settings
+        let original_termios = match nix::sys::termios::tcgetattr(&stdin) {
+            Ok(t) => t,
+            Err(_) => return None,
+        };
+
+        // Set terminal to raw mode for reading response
+        let mut raw_termios = original_termios.clone();
+        nix::sys::termios::cfmakeraw(&mut raw_termios);
+        raw_termios.local_flags.insert(nix::sys::termios::LocalFlags::ISIG);
+
+        if nix::sys::termios::tcsetattr(
+            &stdin,
+            nix::sys::termios::SetArg::TCSANOW,
+            &raw_termios,
+        ).is_err() {
+            return None;
+        }
+
+        // Send OSC 11 query: request background color
+        // Format: ESC ] 11 ; ? BEL  or  ESC ] 11 ; ? ESC \
+        let query = "\x1b]11;?\x1b\\";
+        let _ = std::io::stdout().write_all(query.as_bytes());
+        let _ = std::io::stdout().flush();
+
+        // Read response with timeout
+        let mut response = Vec::new();
+        let mut buf = [0u8; 1];
+        let deadline = std::time::Instant::now() + Duration::from_millis(100);
+
+        // Set non-blocking read with timeout using poll
+        let stdin_fd = stdin.as_raw_fd();
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(stdin_fd) };
+        let mut poll_fds = [nix::poll::PollFd::new(
+            borrowed_fd,
+            nix::poll::PollFlags::POLLIN,
+        )];
+
+        while std::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let timeout_ms = remaining.as_millis() as u16;
+
+            if nix::poll::poll(&mut poll_fds, nix::poll::PollTimeout::from(timeout_ms)).unwrap_or(0) > 0 {
+                if std::io::stdin().read(&mut buf).unwrap_or(0) == 1 {
+                    response.push(buf[0]);
+                    // Check for terminator (BEL or ST)
+                    if buf[0] == 0x07 || (response.len() >= 2 && response.ends_with(b"\x1b\\")) {
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Restore terminal settings
+        let _ = nix::sys::termios::tcsetattr(
+            &stdin,
+            nix::sys::termios::SetArg::TCSANOW,
+            &original_termios,
+        );
+
+        // Parse response: ESC ] 11 ; rgb:RRRR/GGGG/BBBB BEL
+        let response_str = String::from_utf8_lossy(&response);
+        Self::parse_osc11_response(&response_str)
+    }
+
+    /// Parse OSC 11 response and determine theme from background color
+    fn parse_osc11_response(response: &str) -> Option<Self> {
+        // Response format: \x1b]11;rgb:RRRR/GGGG/BBBB\x07
+        // or with 2-digit hex: \x1b]11;rgb:RR/GG/BB\x07
+        let rgb_start = response.find("rgb:")?;
+        let rgb_part = &response[rgb_start + 4..];
+
+        // Find end (before BEL or ST)
+        let rgb_end = rgb_part.find(|c| c == '\x07' || c == '\x1b')
+            .unwrap_or(rgb_part.len());
+        let rgb_str = &rgb_part[..rgb_end];
+
+        let parts: Vec<&str> = rgb_str.split('/').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        // Parse hex values (can be 2 or 4 digits)
+        let r = u16::from_str_radix(parts[0], 16).ok()?;
+        let g = u16::from_str_radix(parts[1], 16).ok()?;
+        let b = u16::from_str_radix(parts[2], 16).ok()?;
+
+        // Normalize to 0-255 range (4-digit hex = 0-65535)
+        let (r, g, b) = if parts[0].len() > 2 {
+            ((r >> 8) as u8, (g >> 8) as u8, (b >> 8) as u8)
+        } else {
+            (r as u8, g as u8, b as u8)
+        };
+
+        // Calculate relative luminance (ITU-R BT.709)
+        // L = 0.2126*R + 0.7152*G + 0.0722*B
+        let luminance = 0.2126 * (r as f64) + 0.7152 * (g as f64) + 0.0722 * (b as f64);
+
+        // Threshold at ~50% brightness
+        if luminance > 128.0 {
+            Some(Self::Light)
+        } else {
+            Some(Self::Dark)
+        }
     }
 }
 
