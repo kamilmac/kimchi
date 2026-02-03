@@ -238,20 +238,61 @@ impl<'a> Widget for InputModal<'a> {
             ];
 
             // Show input with cursor
-            let input_lines: Vec<&str> = self.state.input.split('\n').collect();
-            for line in &input_lines {
-                lines.push(Line::from(Span::styled(
-                    line.to_string(),
-                    ratatui::style::Style::reset().fg(self.colors.text),
-                )));
-            }
+            let input = &self.state.input;
+            let cursor_pos = self.state.cursor_pos;
+            let text_style = ratatui::style::Style::reset().fg(self.colors.text);
+            let cursor_style = ratatui::style::Style::reset().fg(self.colors.text).add_modifier(ratatui::style::Modifier::REVERSED);
 
-            // Show cursor position indicator
-            if input_lines.is_empty() || self.state.input.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    "█",
-                    ratatui::style::Style::reset().fg(self.colors.text),
-                )));
+            if input.is_empty() {
+                // Empty input - just show cursor
+                lines.push(Line::from(Span::styled(" ", cursor_style)));
+            } else {
+                // Insert cursor into text
+                let chars: Vec<char> = input.chars().collect();
+                let before: String = chars[..cursor_pos.min(chars.len())].iter().collect();
+                let cursor_char = chars.get(cursor_pos).copied().unwrap_or(' ');
+                let after: String = if cursor_pos < chars.len() {
+                    chars[cursor_pos + 1..].iter().collect()
+                } else {
+                    String::new()
+                };
+
+                // Split by newlines and render each line
+                let full_text = format!("{}\x00{}", before, after); // marker for cursor position
+                let display_lines: Vec<&str> = full_text.split('\n').collect();
+
+                let mut char_count = 0;
+                for (i, line_text) in display_lines.iter().enumerate() {
+                    let line_start = char_count;
+                    let line_chars: Vec<char> = line_text.chars().filter(|c| *c != '\x00').collect();
+                    let line_len = line_chars.len();
+
+                    if cursor_pos >= line_start && cursor_pos <= line_start + line_len {
+                        // Cursor is on this line
+                        let pos_in_line = cursor_pos - line_start;
+                        let before_cursor: String = line_chars[..pos_in_line.min(line_chars.len())].iter().collect();
+                        let at_cursor = if pos_in_line < line_chars.len() {
+                            line_chars[pos_in_line].to_string()
+                        } else {
+                            " ".to_string()
+                        };
+                        let after_cursor: String = if pos_in_line < line_chars.len() {
+                            line_chars[pos_in_line + 1..].iter().collect()
+                        } else {
+                            String::new()
+                        };
+
+                        lines.push(Line::from(vec![
+                            Span::styled(before_cursor, text_style),
+                            Span::styled(at_cursor, cursor_style),
+                            Span::styled(after_cursor, text_style),
+                        ]));
+                    } else {
+                        lines.push(Line::from(Span::styled(line_chars.iter().collect::<String>(), text_style)));
+                    }
+
+                    char_count += line_len + 1; // +1 for newline
+                }
             }
 
             // Show error if any
