@@ -2,7 +2,23 @@
 set -e
 
 REPO="kamilmac/timecop"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+
+# Default install location based on OS
+if [ -z "$INSTALL_DIR" ]; then
+    case "$(uname -s)" in
+        Darwin)
+            # macOS: use ~/.local/bin (no sudo needed)
+            INSTALL_DIR="$HOME/.local/bin"
+            ;;
+        Linux)
+            # Linux: ~/.local/bin is XDG standard
+            INSTALL_DIR="$HOME/.local/bin"
+            ;;
+        *)
+            INSTALL_DIR="$HOME/.local/bin"
+            ;;
+    esac
+fi
 
 # Detect OS and architecture
 detect_platform() {
