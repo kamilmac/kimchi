@@ -10,3 +10,6 @@
 # OS
 .DS_Store
 timecop
+
+# Temp
+temp/
