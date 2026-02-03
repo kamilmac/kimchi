@@ -132,10 +132,11 @@ impl App {
 
         let branch = git.current_branch().unwrap_or_else(|_| "HEAD".to_string());
 
-        let pr_poll_interval = Config::default().timing.pr_poll_interval;
+        let config = Config::default();
+        let pr_poll_interval = config.timing.pr_poll_interval;
+        let highlighter = Highlighter::for_theme(config.theme);
         let mut app = Self {
             running: true,
-            config: Config::default(),
             git,
             github,
             focused: FocusedWindow::FileList,
@@ -156,7 +157,8 @@ impl App {
             diff_view_state: DiffViewState::new(),
             pr_details_view_state: PrDetailsViewState::new(),
             input_modal_state: InputModalState::new(),
-            highlighter: Highlighter::new(),
+            highlighter,
+            config,
         };
 
         // Show warning if gh CLI is not available
@@ -845,17 +847,16 @@ impl App {
     }
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
-        use ratatui::style::{Color, Modifier};
+        use ratatui::style::Modifier;
 
         let total_width = area.width as usize;
-        let timecop_green = Color::Rgb(150, 255, 170);
-        let timecop_red = Color::Rgb(255, 80, 80);
+        let colors = &self.config.colors;
 
-        let green_bold = ratatui::style::Style::default()
-            .fg(timecop_green)
+        let primary_bold = ratatui::style::Style::default()
+            .fg(colors.logo_primary)
             .add_modifier(Modifier::BOLD);
-        let red_bold = ratatui::style::Style::default()
-            .fg(timecop_red)
+        let highlight_bold = ratatui::style::Style::default()
+            .fg(colors.logo_highlight)
             .add_modifier(Modifier::BOLD);
 
         // TIMECOP as timeline indicator
@@ -871,7 +872,7 @@ impl App {
         for (i, elem) in elements.iter().enumerate() {
             // Highlight the selected element and adjacent dashes
             let is_highlighted = (i as isize - highlight_center as isize).abs() <= 1;
-            let style = if is_highlighted { red_bold } else { green_bold };
+            let style = if is_highlighted { highlight_bold } else { primary_bold };
             spans.push(Span::styled(*elem, style));
         }
 
@@ -885,7 +886,7 @@ impl App {
             },
         };
         let dim_style = ratatui::style::Style::default()
-            .fg(Color::Rgb(100, 100, 100));
+            .fg(colors.muted);
 
         // Fixed width for label (longest is "all changes" = 11 chars)
         const LABEL_WIDTH: usize = 11;

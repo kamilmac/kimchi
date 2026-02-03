@@ -241,7 +241,7 @@ fn render_pr_line(
     // Review requested indicator
     let review_indicator = if pr.review_requested { "◆" } else { " " };
     let review_style = if pr.review_requested {
-        ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
+        ratatui::style::Style::reset().fg(ratatui::style::Color::Yellow)
     } else {
         colors.style_muted()
     };
@@ -271,7 +271,7 @@ fn render_pr_line(
     } else if is_current_branch {
         colors.style_header()
     } else {
-        ratatui::style::Style::default().fg(colors.text)
+        ratatui::style::Style::reset().fg(colors.text)
     };
     spans.push(Span::styled(author, author_style));
 
@@ -293,7 +293,7 @@ fn render_pr_line(
     } else if is_current_branch {
         colors.style_header()
     } else {
-        ratatui::style::Style::default().fg(colors.text)
+        ratatui::style::Style::reset().fg(colors.text)
     };
     spans.push(Span::styled(title_padded, title_style));
 
