@@ -28,18 +28,18 @@ pub enum FocusedWindow {
 }
 
 impl FocusedWindow {
-    /// Tab cycles between left panes only
-    pub fn next_left(self) -> Self {
+    /// Tab cycles through all panes
+    pub fn next(self) -> Self {
         match self {
             Self::FileList => Self::PrList,
-            Self::PrList => Self::FileList,
+            Self::PrList => Self::Preview,
             Self::Preview => Self::FileList,
         }
     }
 
-    pub fn prev_left(self) -> Self {
+    pub fn prev(self) -> Self {
         match self {
-            Self::FileList => Self::PrList,
+            Self::FileList => Self::Preview,
             Self::PrList => Self::FileList,
             Self::Preview => Self::PrList,
         }
@@ -272,15 +272,15 @@ impl App {
             return Ok(());
         }
 
-        // Tab cycles between left panes only
+        // Tab cycles through all panes
         if KeyInput::is_tab(&key) {
-            self.focused = self.focused.next_left();
+            self.focused = self.focused.next();
             self.on_focus_change();
             return Ok(());
         }
 
         if KeyInput::is_shift_tab(&key) {
-            self.focused = self.focused.prev_left();
+            self.focused = self.focused.prev();
             self.on_focus_change();
             return Ok(());
         }
@@ -384,8 +384,8 @@ impl App {
                     FocusTarget::FileList => FocusedWindow::FileList,
                     FocusTarget::PrList => FocusedWindow::PrList,
                     FocusTarget::Preview => FocusedWindow::Preview,
-                    FocusTarget::Next => self.focused.next_left(),
-                    FocusTarget::Prev => self.focused.prev_left(),
+                    FocusTarget::Next => self.focused.next(),
+                    FocusTarget::Prev => self.focused.prev(),
                 };
                 self.on_focus_change();
             }
