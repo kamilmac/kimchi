@@ -6,9 +6,9 @@ Remaining refactors and improvements.
 
 ## Widget Refactoring
 
-### Remaining Tasks
+### WidgetState Trait (optional)
 
-- [ ] Create `WidgetState` trait in `src/ui/widgets/mod.rs` (optional - for uniformity)
+- [ ] Create `WidgetState` trait in `src/ui/widgets/mod.rs` for uniformity
 
 ### Extract PrDetailsView from DiffView
 
@@ -22,35 +22,17 @@ Separating concerns makes DiffView more focused and scalable:
 
 ---
 
-## Event-Driven Architecture
-
-### Goal
-All state changes flow through events. No polling, no special cases. Timers and watchers spawn events.
-
-### Tasks
-
-- [ ] Add new event variants to `AppEvent` (BranchChanged, PrListLoaded, etc.)
-- [ ] Make `AsyncLoader` generic (takes event sender)
-- [ ] Add `.git/HEAD` to file watcher for branch detection
-- [ ] Extract timer logic from `handle_tick()`
-- [ ] Create `App.handle_event()` dispatcher
-- [ ] Remove polling from `handle_tick()`
-
----
-
 ## Focus & Navigation
 
 ### Preview Pane Focus
 
-Current behavior:
+Current behavior (unintuitive):
 - Tab cycles FileList ↔ PrList only
 - Enter on file → Preview
 - Escape → back to FileList
 
-Options to consider:
+Preferred:
 - [ ] Add Preview to tab cycle (Tab: FileList → PrList → Preview → ...)
-- [ ] Or: dedicated key to jump to Preview (e.g., `l` or `→`)
-- [ ] Or: keep current but make it more discoverable
 
 ### Context-Dependent Preview Behavior
 
@@ -59,18 +41,6 @@ Preview shows different content based on left pane:
   - Scroll, line comments, "s" mode toggle, "o" open editor
 - **From PrList** → PrDetailsView (PR info)
   - Scroll only, no line-specific actions
-
-This supports extracting PrDetailsView - each widget has appropriate keybindings when focused.
-
----
-
-## Cleanup
-
-### Remaining Audit
-
-- [ ] Run `cargo +nightly udeps` to find unused dependencies
-- [ ] Review each widget for unused methods
-- [ ] Check for overly complex abstractions that can be simplified
 
 ---
 
@@ -104,12 +74,32 @@ This supports extracting PrDetailsView - each widget has appropriate keybindings
 - [ ] In single: map unified diff position to actual file line
 - [ ] "o" key opens editor at correct line regardless of mode
 
-**Cursor preservation when switching modes:** (depends on focus behavior)
+**Cursor preservation when switching modes:** (design with focus behavior)
 - [ ] Track logical position (file line number) not display position
 - [ ] When toggling mode, stay on same file line
 - [ ] Handle edge cases: cursor on deleted line (no right-side equivalent)
-- Note: design this together with main window focus behavior
 
 ---
 
-## Minor Fixes
+## Event-Driven Architecture
+
+### Goal
+
+All state changes flow through events. No polling, no special cases.
+
+### Tasks
+
+- [ ] Add new event variants to `AppEvent` (BranchChanged, PrListLoaded, etc.)
+- [ ] Make `AsyncLoader` generic (takes event sender)
+- [ ] Add `.git/HEAD` to file watcher for branch detection
+- [ ] Extract timer logic from `handle_tick()`
+- [ ] Create `App.handle_event()` dispatcher
+- [ ] Remove polling from `handle_tick()`
+
+---
+
+## Cleanup
+
+- [ ] Run `cargo +nightly udeps` to find unused dependencies
+- [ ] Review each widget for unused methods
+- [ ] Check for overly complex abstractions that can be simplified
