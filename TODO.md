@@ -38,6 +38,22 @@ All state changes flow through events. No polling, no special cases. Timers and 
 
 ---
 
+## Focus & Navigation
+
+### Preview Pane Focus
+
+Current behavior:
+- Tab cycles FileList ↔ PrList only
+- Enter on file → Preview
+- Escape → back to FileList
+
+Options to consider:
+- [ ] Add Preview to tab cycle (Tab: FileList → PrList → Preview → ...)
+- [ ] Or: dedicated key to jump to Preview (e.g., `l` or `→`)
+- [ ] Or: keep current but make it more discoverable
+
+---
+
 ## Cleanup
 
 ### Remaining Audit
