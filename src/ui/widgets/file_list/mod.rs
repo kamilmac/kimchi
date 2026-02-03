@@ -272,7 +272,7 @@ fn insert_into_tree(nodes: &mut Vec<TreeNode>, parts: &[&str], idx: usize, statu
     }
 }
 
-fn sort_tree(nodes: &mut Vec<TreeNode>) {
+fn sort_tree(nodes: &mut [TreeNode]) {
     nodes.sort_by(|a, b| {
         match (a.is_dir, b.is_dir) {
             (true, false) => std::cmp::Ordering::Less,

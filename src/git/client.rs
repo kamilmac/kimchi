@@ -117,12 +117,17 @@ impl GitClient {
         Ok(entries)
     }
 
-    /// Get paths of uncommitted files
-    fn get_uncommitted_paths(&self) -> Result<HashSet<String>> {
+    /// Create StatusOptions configured for tracking uncommitted files
+    fn status_opts() -> StatusOptions {
         let mut opts = StatusOptions::new();
         opts.include_untracked(true)
             .recurse_untracked_dirs(true);
+        opts
+    }
 
+    /// Get paths of uncommitted files
+    fn get_uncommitted_paths(&self) -> Result<HashSet<String>> {
+        let mut opts = Self::status_opts();
         let statuses = self.repo.statuses(Some(&mut opts))?;
         let mut paths = HashSet::new();
 
@@ -137,10 +142,7 @@ impl GitClient {
 
     /// Get status for uncommitted-only files
     fn uncommitted_status(&self) -> Result<Vec<StatusEntry>> {
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true);
-
+        let mut opts = Self::status_opts();
         let statuses = self.repo.statuses(Some(&mut opts))?;
         let mut entries = Vec::new();
 

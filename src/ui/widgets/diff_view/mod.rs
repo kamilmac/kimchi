@@ -21,8 +21,9 @@ use parser::{
 use super::{Action, ReviewActionType};
 
 /// What to show in the diff view
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum PreviewContent {
+    #[default]
     Empty,
     FileDiff {
         path: String,
@@ -40,12 +41,6 @@ pub enum DiffViewMode {
     #[default]
     Split,
     Unified,
-}
-
-impl Default for PreviewContent {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 /// Minimum width for split view (below this, auto-switch to unified)

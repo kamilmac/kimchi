@@ -85,13 +85,4 @@ impl TimelinePosition {
             Self::CommitDiff(n) => Self::CommitDiff(n - 1),
         }
     }
-
-    /// Get index for timeline display (0 = wip, 1 = full diff)
-    pub fn display_index(&self) -> usize {
-        match self {
-            Self::Wip => 0,
-            Self::FullDiff => 1,
-            Self::CommitDiff(n) => n + 1,
-        }
-    }
 }

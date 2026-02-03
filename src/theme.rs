@@ -58,7 +58,7 @@ impl ThemeMode {
     /// Check COLORFGBG environment variable (format: "fg;bg")
     fn from_colorfgbg() -> Option<Self> {
         let colorfgbg = std::env::var("COLORFGBG").ok()?;
-        let bg = colorfgbg.split(';').last()?;
+        let bg = colorfgbg.rsplit(';').next()?;
         let bg_num: u8 = bg.parse().ok()?;
         // ANSI colors 0-6,8 are typically dark, 7 and 9+ are light
         if bg_num > 8 || bg_num == 7 {
