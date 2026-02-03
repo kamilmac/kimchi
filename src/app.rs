@@ -649,10 +649,10 @@ impl App {
             if entry.is_root {
                 PreviewContent::Empty
             } else if entry.is_dir {
-                // Directory selected - combined diff
+                // Directory selected - combined diff at timeline position
                 let diff = self
                     .git
-                    .diff_files(&entry.children)
+                    .diff_files_at_position(&entry.children, self.timeline_position)
                     .unwrap_or_default();
                 PreviewContent::FolderDiff {
                     path: entry.path.clone(),

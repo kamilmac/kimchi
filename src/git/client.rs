@@ -199,30 +199,6 @@ impl GitClient {
         Ok(FileStatus::Modified)
     }
 
-    /// Get diff for a specific file (always against base branch)
-    pub fn diff(&self, path: &str) -> Result<String> {
-        let base = match &self.base_branch {
-            Some(b) => b,
-            None => return self.working_diff(path),
-        };
-
-        // Use merge-base to compare only changes since branch diverged
-        let merge_base = self.merge_base_commit(base)?;
-        let base_tree = merge_base.tree()?;
-
-        let mut opts = DiffOptions::new();
-        opts.pathspec(path);
-
-        let diff = self.repo.diff_tree_to_workdir(Some(&base_tree), Some(&mut opts))?;
-        let result = self.diff_to_string(&diff)?;
-
-        // If no diff output, file might be new - show as new file
-        if result.is_empty() {
-            return self.format_new_file(path);
-        }
-        Ok(result)
-    }
-
     fn working_diff(&self, path: &str) -> Result<String> {
         let mut opts = DiffOptions::new();
         opts.pathspec(path);
@@ -255,11 +231,11 @@ impl GitClient {
         Ok(result)
     }
 
-    /// Get combined diff for multiple files
-    pub fn diff_files(&self, paths: &[String]) -> Result<String> {
+    /// Get combined diff for multiple files at a specific timeline position
+    pub fn diff_files_at_position(&self, paths: &[String], position: super::TimelinePosition) -> Result<String> {
         let mut result = String::new();
         for path in paths {
-            let diff = self.diff(path)?;
+            let diff = self.diff_at_position(path, position)?;
             if !diff.is_empty() {
                 result.push_str(&diff);
                 result.push('\n');
@@ -373,6 +349,7 @@ impl GitClient {
     }
 
     /// Count commits since base branch (for timeline)
+    /// Uses first-parent traversal to match GitHub's PR behavior
     pub fn commit_count_since_base(&self) -> Result<usize> {
         let base = match &self.base_branch {
             Some(b) => b,
@@ -384,6 +361,7 @@ impl GitClient {
 
         let mut count = 0;
         let mut revwalk = self.repo.revwalk()?;
+        revwalk.simplify_first_parent()?;
         revwalk.push(head_commit.id())?;
         revwalk.hide(merge_base.id())?;
 
@@ -394,13 +372,31 @@ impl GitClient {
         Ok(count)
     }
 
-    /// Get commit at HEAD~n
+    /// Get commit at HEAD~n (first-parent only, matches GitHub PR behavior)
     fn commit_at_offset(&self, offset: usize) -> Result<git2::Commit<'_>> {
+        let head = self.repo.head()?.peel_to_commit()?;
         if offset == 0 {
-            return self.repo.head()?.peel_to_commit().context("Failed to get HEAD");
+            return Ok(head);
         }
-        let refspec = format!("HEAD~{}", offset);
-        self.resolve_commit(&refspec)
+
+        // Walk first-parent only to match GitHub's commit ordering
+        let mut revwalk = self.repo.revwalk()?;
+        revwalk.simplify_first_parent()?;
+        revwalk.push(head.id())?;
+
+        let mut current = head;
+        for (i, oid) in revwalk.enumerate() {
+            if i == offset {
+                return self.repo.find_commit(oid?).context("Failed to find commit");
+            }
+            if i > offset {
+                break;
+            }
+            current = self.repo.find_commit(oid?)?;
+        }
+
+        // If we didn't find enough commits, return the last one
+        Ok(current)
     }
 
     /// Get commit summary (first line of message) at HEAD~n
