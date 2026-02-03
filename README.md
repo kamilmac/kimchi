@@ -12,12 +12,20 @@ Browser PRs, terminal, editor — too much context switching. I wanted everythin
 
 ## Install
 
+**Quick install (macOS/Linux):**
 ```bash
-git clone https://github.com/kmacinski/timecop
+curl -fsSL https://raw.githubusercontent.com/kamilmac/timecop/main/install.sh | sh
+```
+
+**Build from source:**
+```bash
+git clone https://github.com/kamilmac/timecop
 cd timecop
 cargo build --release
 cp target/release/timecop ~/.local/bin/
 ```
+
+**Windows:** Download from [Releases](https://github.com/kamilmac/timecop/releases).
 
 Needs Git. For PR features (list, approve, comment), install [gh CLI](https://cli.github.com/).
 
