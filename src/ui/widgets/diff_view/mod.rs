@@ -356,12 +356,6 @@ impl DiffViewState {
     /// Handle key input, return action for App to dispatch
     /// pr_number is needed for line comments
     pub fn handle_key(&mut self, key: &KeyEvent, pr_number: Option<u64>) -> Action {
-        // Toggle view mode
-        if KeyInput::is_toggle_view_mode(key) {
-            self.toggle_view_mode();
-            return Action::None;
-        }
-
         // Line comment
         if KeyInput::is_comment(key) {
             if let (Some(pr_num), Some(path), Some(line)) = (
