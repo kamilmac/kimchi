@@ -994,12 +994,13 @@ impl App {
         let help_hint = "? help";
         let help_hint_width = help_hint.len() + 2; // " ? help "
 
-        // Center the timeline, state label to right, help hint at far right
+        // Center the logo+label, help hint fixed at far right
         let logo_width = elements.iter().map(|s| s.chars().count()).sum::<usize>();
         let label_width = 2 + LABEL_WIDTH;
-        let content_width = logo_width + label_width + help_hint_width;
-        let left_pad = total_width.saturating_sub(content_width) / 2;
-        let right_pad = total_width.saturating_sub(logo_width + left_pad + label_width + help_hint_width);
+        let center_content_width = logo_width + label_width;
+        let available_for_center = total_width.saturating_sub(help_hint_width);
+        let left_pad = available_for_center.saturating_sub(center_content_width) / 2;
+        let right_pad = total_width.saturating_sub(left_pad + center_content_width + help_hint_width);
 
         let mut line_spans = vec![Span::raw(" ".repeat(left_pad))];
         line_spans.extend(spans);
