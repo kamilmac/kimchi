@@ -926,12 +926,14 @@ impl App {
             spans.push(Span::styled(*elem, primary_bold));
         }
 
-        // Separator
-        spans.push(Span::styled("─", primary_bold));
+        // Separator (only if there are commits)
+        let num_commits = self.commit_count.min(16);
+        if num_commits > 0 {
+            spans.push(Span::styled("─", primary_bold));
+        }
 
-        // Commit dots (16 positions: -16 to -1, left to right)
-        // Position -16 is index 0, -1 is index 15
-        for i in (1..=16).rev() {
+        // Commit dots (only show available commits, max 16)
+        for i in (1..=num_commits).rev() {
             let is_selected = matches!(self.timeline_position, TimelinePosition::CommitDiff(n) if n == i);
             let style = if is_selected { highlight_bold } else { primary_bold };
             spans.push(Span::styled("○", style));
