@@ -22,16 +22,15 @@ impl ThemeMode {
             }
         }
 
-        // 2. Query terminal background color via OSC 11 (most accurate)
+        // 2. Query terminal background color via OSC 11 (most accurate, works on many terminals)
         if let Some(theme) = Self::detect_from_terminal() {
             return theme;
         }
 
-        // 3. Check COLORFGBG env var (format: "fg;bg" where bg > 8 typically means light)
+        // 3. Check COLORFGBG env var (set by some terminals like xterm, rxvt)
         if let Ok(colorfgbg) = std::env::var("COLORFGBG") {
             if let Some(bg) = colorfgbg.split(';').last() {
                 if let Ok(bg_num) = bg.parse::<u8>() {
-                    // Background colors 0-8 are typically dark, 9+ are light
                     if bg_num > 8 || bg_num == 7 {
                         return Self::Light;
                     }
@@ -39,8 +38,61 @@ impl ThemeMode {
             }
         }
 
-        // Default to dark
+        // 4. Check common terminal-specific theme indicators
+        if let Some(theme) = Self::detect_from_terminal_hints() {
+            return theme;
+        }
+
+        // Default to dark (most common terminal setup)
         Self::Dark
+    }
+
+    /// Check terminal-specific environment hints
+    fn detect_from_terminal_hints() -> Option<Self> {
+        // iTerm2 sets this
+        if let Ok(profile) = std::env::var("ITERM_PROFILE") {
+            let lower = profile.to_lowercase();
+            if lower.contains("light") || lower.contains("solarized light") {
+                return Some(Self::Light);
+            }
+            if lower.contains("dark") {
+                return Some(Self::Dark);
+            }
+        }
+
+        // Kitty terminal
+        if let Ok(theme) = std::env::var("KITTY_THEME") {
+            let lower = theme.to_lowercase();
+            if lower.contains("light") {
+                return Some(Self::Light);
+            }
+        }
+
+        // VS Code integrated terminal
+        if let Ok(theme) = std::env::var("VSCODE_TERMINAL_THEME") {
+            if theme.to_lowercase().contains("light") {
+                return Some(Self::Light);
+            }
+        }
+
+        // macOS Terminal.app - check default profile
+        #[cfg(target_os = "macos")]
+        if std::env::var("TERM_PROGRAM").ok().as_deref() == Some("Apple_Terminal") {
+            if let Ok(output) = std::process::Command::new("defaults")
+                .args(["read", "com.apple.Terminal", "Default Window Settings"])
+                .output()
+            {
+                let profile = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+                // Default light profiles
+                if matches!(profile.as_str(), "basic" | "novel" | "ocean" | "grass" | "silver aerogel")
+                    || profile.contains("light")
+                {
+                    return Some(Self::Light);
+                }
+            }
+        }
+
+        None
     }
 
     /// Query terminal for background color using OSC 11 escape sequence
@@ -73,15 +125,15 @@ impl ThemeMode {
         }
 
         // Send OSC 11 query: request background color
-        // Format: ESC ] 11 ; ? BEL  or  ESC ] 11 ; ? ESC \
-        let query = "\x1b]11;?\x1b\\";
+        // Try BEL terminator first (more widely supported), then ST
+        let query = "\x1b]11;?\x07";
         let _ = std::io::stdout().write_all(query.as_bytes());
         let _ = std::io::stdout().flush();
 
-        // Read response with timeout
+        // Read response with timeout (300ms to handle slow terminals)
         let mut response = Vec::new();
         let mut buf = [0u8; 1];
-        let deadline = std::time::Instant::now() + Duration::from_millis(100);
+        let deadline = std::time::Instant::now() + Duration::from_millis(300);
 
         // Set non-blocking read with timeout using poll
         let stdin_fd = stdin.as_raw_fd();
