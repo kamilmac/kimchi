@@ -96,7 +96,7 @@ pub struct Timing {
 impl Default for Timing {
     fn default() -> Self {
         Self {
-            pr_poll_interval: Duration::from_secs(300), // 5 minutes
+            pr_poll_interval: Duration::from_secs(120), // 2 minutes
         }
     }
 }
