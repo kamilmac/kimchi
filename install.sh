@@ -2,7 +2,7 @@
 set -e
 
 REPO="kamilmac/timecop"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS and architecture
 detect_platform() {
@@ -70,22 +70,26 @@ main() {
 
     # Ensure install directory exists
     if [ ! -d "$INSTALL_DIR" ]; then
-        echo "Creating $INSTALL_DIR (requires sudo)"
-        sudo mkdir -p "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR"
     fi
 
     # Install binary
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "$TMP_DIR/timecop" "$INSTALL_DIR/timecop"
-    else
-        echo "Installing to $INSTALL_DIR (requires sudo)"
-        sudo mv "$TMP_DIR/timecop" "$INSTALL_DIR/timecop"
-    fi
-
+    mv "$TMP_DIR/timecop" "$INSTALL_DIR/timecop"
     chmod +x "$INSTALL_DIR/timecop"
 
     echo "timecop installed successfully to $INSTALL_DIR/timecop"
     echo ""
+
+    # Check if install dir is in PATH
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) ;;
+        *)
+            echo "Add to your PATH (add to ~/.zshrc or ~/.bashrc):"
+            echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+            echo ""
+            ;;
+    esac
+
     echo "Run 'timecop' in any git repository to start"
 }
 
