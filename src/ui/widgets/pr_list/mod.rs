@@ -21,13 +21,22 @@ pub struct PrListPanelState {
     pub offset: usize,
     pub loading: bool,
     pub current_branch: String,
+    pub gh_available: bool,
 }
 
 impl PrListPanelState {
     pub fn new() -> Self {
         Self {
             loading: true,
+            gh_available: true, // Assume available until told otherwise
             ..Default::default()
+        }
+    }
+
+    pub fn set_gh_available(&mut self, available: bool) {
+        self.gh_available = available;
+        if !available {
+            self.loading = false;
         }
     }
 
@@ -90,6 +99,11 @@ impl PrListPanelState {
 
     /// Handle key input, return action for App to dispatch
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
+        // All PR actions require gh CLI
+        if !self.gh_available {
+            return Action::Ignored;
+        }
+
         // Review actions
         if KeyInput::is_approve(key) {
             if let Some(pr) = self.selected() {
@@ -202,6 +216,16 @@ impl<'a> StatefulWidget for PrListPanel<'a> {
 
         let inner = block.inner(area);
         block.render(area, buf);
+
+        if !state.gh_available {
+            let line = Line::from(Span::styled("gh CLI not found", self.colors.style_muted()));
+            buf.set_line(inner.x, inner.y, &line, inner.width);
+            let hint = Line::from(Span::styled("cli.github.com", self.colors.style_muted()));
+            if inner.height > 1 {
+                buf.set_line(inner.x, inner.y + 1, &hint, inner.width);
+            }
+            return;
+        }
 
         if state.prs.is_empty() && !state.loading {
             let line = Line::from(Span::styled("No open PRs", self.colors.style_muted()));

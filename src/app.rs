@@ -166,12 +166,8 @@ impl App {
             layout_areas: None,
         };
 
-        // Show warning if gh CLI is not available
-        if !gh_available {
-            app.toast = Some(Toast::error("gh CLI not found - PR features disabled"));
-        }
-
-        // Initialize PR list panel with current branch
+        // Initialize PR list panel
+        app.pr_list_panel_state.set_gh_available(gh_available);
         app.pr_list_panel_state.set_current_branch(app.branch.clone());
 
         app.refresh()?;
@@ -313,9 +309,12 @@ impl App {
         self.pr_list_panel_state.loading = self.async_loader.is_pr_list_loading();
 
         // Trigger PR list loading if needed (on startup and periodically)
-        let should_load_pr_list = self.last_pr_list_poll.elapsed() >= pr_poll_interval;
-        if should_load_pr_list && !self.async_loader.is_pr_list_loading() {
-            self.async_loader.load_pr_list();
+        // Skip if gh CLI is not available
+        if self.gh_available {
+            let should_load_pr_list = self.last_pr_list_poll.elapsed() >= pr_poll_interval;
+            if should_load_pr_list && !self.async_loader.is_pr_list_loading() {
+                self.async_loader.load_pr_list();
+            }
         }
     }
 
