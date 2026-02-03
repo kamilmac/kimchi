@@ -908,57 +908,72 @@ impl App {
         let highlight_bold = ratatui::style::Style::default()
             .fg(colors.logo_highlight)
             .add_modifier(Modifier::BOLD);
+        let dim_style = ratatui::style::Style::default()
+            .fg(colors.muted);
 
-        // TIMECOP as timeline indicator
-        // Elements: ◆─◆─T─I─M─E─C─O─P─◆─◆ (11 positions)
-        // Position mapping (right to left): 0=wip, 1=full, 2=-1, 3=-2, ..., 10=-9
-        let elements = ["◆", "─", "◆", "─", "T", "─", "I", "─", "M", "─", "E", "─", "C", "─", "O", "─", "P", "─", "◆", "─", "◆"];
-        let position_to_index = [20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0]; // maps timeline position to element index
-
-        let selected_idx = self.timeline_position.display_index().min(10);
-        let highlight_center = position_to_index[selected_idx];
+        // Timeline layout (left to right):
+        // T─I─M─E─C─O─P─○─○─○─○─○─○─○─○─○─○─○─○─[all]─[wip]
+        //               -12...............-1   all   wip
 
         let mut spans = Vec::new();
-        for (i, elem) in elements.iter().enumerate() {
-            // Highlight the selected element and adjacent dashes
-            let is_highlighted = (i as isize - highlight_center as isize).abs() <= 1;
-            let style = if is_highlighted { highlight_bold } else { primary_bold };
-            spans.push(Span::styled(*elem, style));
+
+        // Left padding
+        spans.push(Span::raw(" "));
+
+        // TIMECOP logo
+        let logo = ["T", "─", "I", "─", "M", "─", "E", "─", "C", "─", "O", "─", "P"];
+        for elem in logo.iter() {
+            spans.push(Span::styled(*elem, primary_bold));
         }
 
-        // State label (dimmed, lowercase, fixed width)
+        // Separator
+        spans.push(Span::styled("─", primary_bold));
+
+        // Commit dots (16 positions: -16 to -1, left to right)
+        // Position -16 is index 0, -1 is index 15
+        for i in (1..=16).rev() {
+            let is_selected = matches!(self.timeline_position, TimelinePosition::CommitDiff(n) if n == i);
+            let style = if is_selected { highlight_bold } else { primary_bold };
+            spans.push(Span::styled("○", style));
+            spans.push(Span::styled("─", if is_selected { highlight_bold } else { primary_bold }));
+        }
+
+        // [all] marker
+        let all_selected = matches!(self.timeline_position, TimelinePosition::FullDiff);
+        spans.push(Span::styled("[", primary_bold));
+        spans.push(Span::styled("all", if all_selected { highlight_bold } else { primary_bold }));
+        spans.push(Span::styled("]", primary_bold));
+        spans.push(Span::styled("─", primary_bold));
+
+        // [wip] marker
+        let wip_selected = matches!(self.timeline_position, TimelinePosition::Wip);
+        spans.push(Span::styled("[", primary_bold));
+        spans.push(Span::styled("wip", if wip_selected { highlight_bold } else { primary_bold }));
+        spans.push(Span::styled("]", primary_bold));
+
+        // State label
         let state_label = match self.timeline_position {
             TimelinePosition::Wip => "wip",
             TimelinePosition::FullDiff => "all changes",
             TimelinePosition::CommitDiff(n) => match n {
                 1 => "-1", 2 => "-2", 3 => "-3", 4 => "-4", 5 => "-5",
-                6 => "-6", 7 => "-7", 8 => "-8", _ => "-9",
+                6 => "-6", 7 => "-7", 8 => "-8", 9 => "-9", 10 => "-10",
+                11 => "-11", 12 => "-12", 13 => "-13", 14 => "-14", 15 => "-15",
+                _ => "-16",
             },
         };
-        let dim_style = ratatui::style::Style::default()
-            .fg(colors.muted);
-
-        // Fixed width for label (longest is "all changes" = 11 chars)
         const LABEL_WIDTH: usize = 11;
         let padded_label = format!("  {:width$}", state_label, width = LABEL_WIDTH);
+        spans.push(Span::styled(padded_label, dim_style));
 
         // Help hint on the right
         let help_hint = "? help";
-        let help_hint_width = help_hint.len() + 2; // " ? help "
+        let content_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+        let right_pad = total_width.saturating_sub(content_width + help_hint.len() + 2);
+        spans.push(Span::raw(" ".repeat(right_pad)));
+        spans.push(Span::styled(format!(" {} ", help_hint), dim_style));
 
-        // Center only the logo, label follows it, help hint at far right
-        let logo_width = elements.iter().map(|s| s.chars().count()).sum::<usize>();
-        let label_width = 2 + LABEL_WIDTH;
-        let left_pad = total_width.saturating_sub(logo_width) / 2;
-        let right_pad = total_width.saturating_sub(left_pad + logo_width + label_width + help_hint_width);
-
-        let mut line_spans = vec![Span::raw(" ".repeat(left_pad))];
-        line_spans.extend(spans);
-        line_spans.push(Span::styled(padded_label, dim_style));
-        line_spans.push(Span::raw(" ".repeat(right_pad)));
-        line_spans.push(Span::styled(format!(" {} ", help_hint), dim_style));
-
-        frame.render_widget(Line::from(line_spans), area);
+        frame.render_widget(Line::from(spans), area);
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
