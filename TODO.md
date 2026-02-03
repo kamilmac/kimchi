@@ -182,15 +182,15 @@ fn render(&self, frame: &mut Frame) {
 
 ### Tasks
 
-- [ ] Create `Action` enum in `src/ui/widgets/action.rs`
+- [x] Create `Action` enum in `src/ui/widgets/action.rs`
 - [ ] Create `WidgetState` trait in `src/ui/widgets/mod.rs`
-- [ ] Add `handle_key() -> Action` to all widget states
-- [ ] Update `App.handle_key()` to dispatch actions
-- [ ] Rename `pr_info.rs` → `pr_list/`
-- [ ] Rename `input_modal.rs` → `input/`
-- [ ] Move `diff_parser.rs` → `diff_view/parser.rs`
+- [x] Add `handle_key() -> Action` to all widget states
+- [x] Update `App.handle_key()` to dispatch actions
+- [x] Rename `pr_info.rs` → `pr_list/`
+- [x] Rename `input_modal.rs` → `input/`
+- [x] Move `diff_parser.rs` → `diff_view/parser.rs`
 - [ ] Extract PR details rendering to `pr_details/`
-- [ ] Organize each widget into its own folder
+- [x] Organize each widget into its own folder
 
 ---
 
@@ -346,7 +346,7 @@ After iterative development, audit the codebase for:
 
 ### Audit Checklist
 
-- [ ] Run `cargo clippy -- -W dead_code` and fix warnings
+- [x] Run `cargo clippy -- -W dead_code` and fix warnings
 - [ ] Run `cargo +nightly udeps` to find unused dependencies
 - [ ] Review each widget for unused methods
 - [ ] Check for overly complex abstractions that can be simplified
