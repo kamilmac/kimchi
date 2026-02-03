@@ -3,6 +3,8 @@ use syntect::highlighting::{FontStyle, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::easy::HighlightLines;
 
+use crate::config::ThemeMode;
+
 /// Syntax highlighter using syntect
 pub struct Highlighter {
     syntax_set: SyntaxSet,
@@ -12,10 +14,18 @@ pub struct Highlighter {
 
 impl Highlighter {
     pub fn new() -> Self {
+        Self::for_theme(ThemeMode::detect())
+    }
+
+    pub fn for_theme(mode: ThemeMode) -> Self {
+        let theme_name = match mode {
+            ThemeMode::Dark => "base16-eighties.dark",
+            ThemeMode::Light => "InspiredGitHub",
+        };
         Self {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
-            theme_name: "base16-eighties.dark".to_string(),
+            theme_name: theme_name.to_string(),
         }
     }
 

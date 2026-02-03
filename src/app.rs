@@ -95,10 +95,11 @@ impl App {
 
         let branch = git.current_branch().unwrap_or_else(|_| "HEAD".to_string());
 
-        let pr_poll_interval = Config::default().timing.pr_poll_interval;
+        let config = Config::default();
+        let pr_poll_interval = config.timing.pr_poll_interval;
+        let highlighter = Highlighter::for_theme(config.theme);
         let mut app = Self {
             running: true,
-            config: Config::default(),
             git,
             github,
             focused: FocusedWindow::FileList,
@@ -116,7 +117,8 @@ impl App {
             diff_view_state: DiffViewState::new(),
             pr_details_view_state: PrDetailsViewState::new(),
             input_modal_state: InputModalState::new(),
-            highlighter: Highlighter::new(),
+            highlighter,
+            config,
         };
 
         // Initialize PR list panel with current branch
