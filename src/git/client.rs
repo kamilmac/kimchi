@@ -427,13 +427,21 @@ impl GitClient {
         match position {
             TimelinePosition::FullDiff | TimelinePosition::FullDiffExtended => {
                 // Base to HEAD (all committed changes)
-                // For FullDiffExtended, suggested files will show empty diff (they aren't changed)
                 let head_tree = self.repo.head()?.peel_to_tree()?;
                 let diff = self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
                 let result = self.diff_to_string(&diff)?;
                 if result.is_empty() {
-                    // For suggested files, show helpful message instead of treating as new file
-                    return Ok(format!("# {} (suggested related file - no changes in this PR)\n", path));
+                    // No committed changes - try to show uncommitted changes
+                    let wip_diff = self.repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut opts))?;
+                    let wip_result = self.diff_to_string(&wip_diff)?;
+                    if !wip_result.is_empty() {
+                        return Ok(wip_result);
+                    }
+                    // No changes at all - for FullDiffExtended this is likely a suggested file
+                    if matches!(position, TimelinePosition::FullDiffExtended) {
+                        return Ok(format!("# {} (suggested related file - no changes in this PR)\n", path));
+                    }
+                    return self.format_new_file(path);
                 }
                 Ok(result)
             }
