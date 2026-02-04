@@ -16,17 +16,6 @@ A terminal UI for reviewing pull requests and navigating commit history.
 - **All PRs in one view** — Browse open pull requests, see status, check out branches
 - **Keyboard-driven** — Fast navigation, no mouse required
 
-## Screenshots
-
-<p>
-<img src="screenshots/pr-details.png" width="400" />
-<img src="screenshots/diff-with-comment.png" width="400" />
-</p>
-<p>
-<img src="screenshots/side-by-side-diff.png" width="400" />
-<img src="screenshots/request-changes.png" width="400" />
-</p>
-
 ## Install
 
 **Quick install (macOS/Linux):**
