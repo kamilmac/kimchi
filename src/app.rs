@@ -14,7 +14,7 @@ use crate::event::KeyInput;
 use crate::git::{DiffStats, GitClient, TimelinePosition};
 use crate::github::{GitHubClient, PrInfo};
 use crate::ui::{
-    centered_rect, Action, AppLayout, DiffView, DiffViewState, FileList, FileListState, HelpModal,
+    centered_rect, Action, AppLayout, DiffView, DiffViewState, FileList, FileListState, HelpModal, HelpModalState,
     Highlighter, InputModal, InputModalState, InputResult, LayoutAreas, PrDetailsView,
     PrDetailsViewState, PrListPanel, PrListPanelState, PreviewContent, ReviewAction,
     ReviewActionType,
@@ -118,6 +118,7 @@ pub struct App {
     pub diff_view_state: DiffViewState,
     pub pr_details_view_state: PrDetailsViewState,
     pub input_modal_state: InputModalState,
+    pub help_modal_state: HelpModalState,
 
     // Syntax highlighting
     highlighter: Highlighter,
@@ -161,6 +162,7 @@ impl App {
             diff_view_state: DiffViewState::new(),
             pr_details_view_state: PrDetailsViewState::new(),
             input_modal_state: InputModalState::new(),
+            help_modal_state: HelpModalState::new(),
             highlighter,
             config,
             layout_areas: None,
@@ -345,10 +347,13 @@ impl App {
             return Ok(());
         }
 
-        // Help modal takes priority
+        // Help modal takes priority - handle scrolling
         if self.show_help {
             if KeyInput::is_help(&key) || KeyInput::is_escape(&key) {
                 self.show_help = false;
+                self.help_modal_state.scroll = 0; // Reset scroll on close
+            } else {
+                self.help_modal_state.handle_key(&key);
             }
             return Ok(());
         }
@@ -840,7 +845,7 @@ impl App {
         if self.show_help {
             let help_area = centered_rect(60, 80, area);
             let help = HelpModal::new(colors);
-            frame.render_widget(help, help_area);
+            frame.render_stateful_widget(help, help_area, &mut self.help_modal_state);
         }
 
         // Render input modal if open
