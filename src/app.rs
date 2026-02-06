@@ -961,6 +961,7 @@ impl App {
 
         // State label
         let state_label = match self.timeline_position {
+            TimelinePosition::Browse => "browse",
             TimelinePosition::Wip => "wip",
             TimelinePosition::FullDiff => "all changes",
             TimelinePosition::CommitDiff(n) => match n {
@@ -998,6 +999,7 @@ impl App {
 
         // Right: position info
         let right_content = match self.timeline_position {
+            TimelinePosition::Browse => "file browser ".to_string(),
             TimelinePosition::FullDiff => "all changes (base → head) ".to_string(),
             TimelinePosition::Wip => "uncommitted changes ".to_string(),
             TimelinePosition::CommitDiff(n) => {
