@@ -78,6 +78,14 @@ impl Toast {
         }
     }
 
+    pub fn info(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            is_error: false,
+            created_at: Instant::now(),
+        }
+    }
+
     pub fn is_expired(&self) -> bool {
         self.created_at.elapsed() > Duration::from_secs(3)
     }
@@ -580,8 +588,35 @@ impl App {
                     ReviewActionType::LineComment { pr_number, path, line } => {
                         ReviewAction::LineComment { pr_number, path, line }
                     }
+                    ReviewActionType::ReplyToComment { pr_number, comment_id } => {
+                        ReviewAction::ReplyToComment { pr_number, comment_id }
+                    }
                 };
                 self.input_modal_state.show(review_action);
+            }
+
+            Action::ShowBlame { path, line } => {
+                match self.git.blame_line(&path, line) {
+                    Ok(Some(blame)) => {
+                        let msg = format!(
+                            "{} ({}) - {}",
+                            blame.author,
+                            blame.date,
+                            if blame.summary.len() > 50 {
+                                format!("{}...", &blame.summary[..50])
+                            } else {
+                                blame.summary
+                            }
+                        );
+                        self.toast = Some(Toast::info(msg));
+                    }
+                    Ok(None) => {
+                        self.toast = Some(Toast::info("No blame info for this line"));
+                    }
+                    Err(e) => {
+                        self.toast = Some(Toast::error(format!("Blame failed: {}", e)));
+                    }
+                }
             }
         }
 
@@ -774,6 +809,9 @@ impl App {
             ReviewAction::LineComment { pr_number, path, line } => {
                 self.github.add_line_comment(*pr_number, path, *line, &body)
             }
+            ReviewAction::ReplyToComment { pr_number, comment_id } => {
+                self.github.reply_to_comment(*pr_number, *comment_id, &body)
+            }
             ReviewAction::CheckoutPr { .. } => unreachable!(), // Handled above
         };
 
@@ -787,6 +825,7 @@ impl App {
                     ReviewAction::RequestChanges { .. } => "Changes requested",
                     ReviewAction::Comment { .. } => "Comment posted",
                     ReviewAction::LineComment { .. } => "Line comment added",
+                    ReviewAction::ReplyToComment { .. } => "Reply posted",
                     ReviewAction::CheckoutPr { .. } => unreachable!(),
                 };
                 self.toast = Some(Toast::success(success_msg));
@@ -951,9 +990,17 @@ impl App {
         spans.push(Span::styled("[", primary_bold));
         spans.push(Span::styled("wip", if wip_selected { highlight_bold } else { primary_bold }));
         spans.push(Span::styled("]", primary_bold));
+        spans.push(Span::styled("─", primary_bold));
+
+        // [browse] marker
+        let browse_selected = matches!(self.timeline_position, TimelinePosition::Browse);
+        spans.push(Span::styled("[", primary_bold));
+        spans.push(Span::styled("browse", if browse_selected { highlight_bold } else { primary_bold }));
+        spans.push(Span::styled("]", primary_bold));
 
         // State label
         let state_label = match self.timeline_position {
+            TimelinePosition::Browse => "browse",
             TimelinePosition::Wip => "wip",
             TimelinePosition::FullDiff => "all changes",
             TimelinePosition::CommitDiff(n) => match n {
@@ -991,6 +1038,7 @@ impl App {
 
         // Right: position info
         let right_content = match self.timeline_position {
+            TimelinePosition::Browse => "file browser ".to_string(),
             TimelinePosition::FullDiff => "all changes (base → head) ".to_string(),
             TimelinePosition::Wip => "uncommitted changes ".to_string(),
             TimelinePosition::CommitDiff(n) => {

@@ -27,6 +27,10 @@ pub enum Action {
     // Review actions
     /// Open review modal
     OpenReviewModal(ReviewActionType),
+
+    // Blame actions
+    /// Show blame info for file and line
+    ShowBlame { path: String, line: usize },
 }
 
 /// Types of review actions
@@ -36,4 +40,5 @@ pub enum ReviewActionType {
     RequestChanges { pr_number: u64 },
     Comment { pr_number: u64 },
     LineComment { pr_number: u64, path: String, line: u32 },
+    ReplyToComment { pr_number: u64, comment_id: u64 },
 }

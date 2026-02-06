@@ -26,11 +26,13 @@ pub struct Review {
 
 #[derive(Debug, Clone)]
 pub struct Comment {
+    pub id: u64,
     pub author: String,
     pub body: String,
     pub line: Option<u32>,
     pub original_line: Option<u32>,
     pub side: Option<String>, // "LEFT" or "RIGHT"
+    pub in_reply_to_id: Option<u64>,
 }
 
 /// GitHub client using gh CLI
@@ -116,12 +118,14 @@ impl GitHubClient {
 
         #[derive(Deserialize)]
         struct CommentData {
+            id: u64,
             user: UserData,
             body: String,
             path: Option<String>,
             line: Option<u32>,
             original_line: Option<u32>,
             side: Option<String>,
+            in_reply_to_id: Option<u64>,
         }
 
         #[derive(Deserialize)]
@@ -137,11 +141,13 @@ impl GitHubClient {
 
         for c in comments {
             let comment = Comment {
+                id: c.id,
                 author: c.user.login,
                 body: c.body,
                 line: c.line,
                 original_line: c.original_line,
                 side: c.side,
+                in_reply_to_id: c.in_reply_to_id,
             };
 
             if let Some(path) = c.path {
@@ -434,6 +440,28 @@ impl GitHubClient {
                 let stderr = String::from_utf8_lossy(&output2.stderr);
                 anyhow::bail!("Failed to add line comment: {}", stderr);
             }
+        }
+        Ok(())
+    }
+
+    /// Reply to an existing PR comment
+    pub fn reply_to_comment(&self, pr_number: u64, comment_id: u64, body: &str) -> Result<()> {
+        let output = Command::new("gh")
+            .args([
+                "api",
+                "--method", "POST",
+                &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments/{}/replies", pr_number, comment_id),
+                "-f", &format!("body={}", body),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .context("Failed to reply to comment")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to reply to comment: {}", stderr);
         }
         Ok(())
     }

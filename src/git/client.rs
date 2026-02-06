@@ -3,7 +3,7 @@ use git2::{DiffOptions, Repository, StatusOptions};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use super::types::*;
+use super::types::{BlameInfo, DiffStats, FileBlame, FileStatus, StatusEntry};
 
 /// Git client using libgit2 for native performance
 pub struct GitClient {
@@ -199,6 +199,47 @@ impl GitClient {
         Ok(FileStatus::Modified)
     }
 
+    /// Get all tracked files in the repository
+    fn all_tracked_files(&self) -> Result<Vec<StatusEntry>> {
+        let head_tree = self.repo.head()?.peel_to_tree()?;
+        let mut entries = Vec::new();
+
+        head_tree.walk(git2::TreeWalkMode::PreOrder, |dir, entry| {
+            if entry.kind() == Some(git2::ObjectType::Blob) {
+                let path = if dir.is_empty() {
+                    entry.name().unwrap_or("").to_string()
+                } else {
+                    format!("{}{}", dir, entry.name().unwrap_or(""))
+                };
+                entries.push(StatusEntry {
+                    path,
+                    status: FileStatus::Unchanged,
+                    uncommitted: false,
+                });
+            }
+            git2::TreeWalkResult::Ok
+        })?;
+
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
+    }
+
+    /// Read file content formatted for browsing (not as a diff)
+    fn read_file_content(&self, path: &str) -> Result<String> {
+        let content = self.read_file(path)?;
+        // Format as pseudo-diff for the diff view parser
+        // This shows the file with line numbers but without +/- prefixes
+        let lines: Vec<&str> = content.lines().collect();
+        let mut result = format!("File: {}\n", path);
+        result.push_str(&format!("@@ -1,{} +1,{} @@\n", lines.len(), lines.len()));
+        for line in lines {
+            result.push(' '); // Context line prefix
+            result.push_str(line);
+            result.push('\n');
+        }
+        Ok(result)
+    }
+
     fn working_diff(&self, path: &str) -> Result<String> {
         let mut opts = DiffOptions::new();
         opts.pathspec(path);
@@ -292,6 +333,10 @@ impl GitClient {
         use super::TimelinePosition;
 
         let diff = match position {
+            TimelinePosition::Browse => {
+                // No diff in browse mode
+                return Ok(DiffStats::default());
+            }
             TimelinePosition::FullDiff => {
                 let base = match &self.base_branch {
                     Some(b) => b,
@@ -422,6 +467,10 @@ impl GitClient {
         opts.pathspec(path);
 
         match position {
+            TimelinePosition::Browse => {
+                // Show full file content (no diff)
+                self.read_file_content(path)
+            }
             TimelinePosition::FullDiff => {
                 // Base to HEAD (all committed changes)
                 let head_tree = self.repo.head()?.peel_to_tree()?;
@@ -468,6 +517,10 @@ impl GitClient {
         log::debug!("status_at_position: {:?}", position);
 
         match position {
+            TimelinePosition::Browse => {
+                // Show all tracked files in the repo
+                self.all_tracked_files()
+            }
             TimelinePosition::FullDiff => {
                 // Show all committed changes: base → HEAD
                 self.status()
@@ -516,5 +569,55 @@ impl GitClient {
                 Ok(entries)
             }
         }
+    }
+
+    /// Get blame information for a file
+    pub fn blame_file(&self, path: &str) -> Result<FileBlame> {
+        use chrono::{TimeZone, Utc};
+
+        let blame = self.repo.blame_file(std::path::Path::new(path), None)
+            .with_context(|| format!("Failed to get blame for {}", path))?;
+
+        let mut lines = Vec::new();
+
+        for (line_num, hunk) in blame.iter().enumerate() {
+            let sig = hunk.final_signature();
+            let author = sig.name().unwrap_or("Unknown").to_string();
+
+            // Format date
+            let time = sig.when();
+            let datetime = Utc.timestamp_opt(time.seconds(), 0)
+                .single()
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+
+            // Get commit info
+            let commit_id = hunk.final_commit_id();
+            let short_id = format!("{:.7}", commit_id);
+
+            let summary = self.repo.find_commit(commit_id)
+                .ok()
+                .and_then(|c| c.summary().map(|s| s.to_string()))
+                .unwrap_or_default();
+
+            lines.push(BlameInfo {
+                line: line_num + 1,
+                author,
+                date: datetime,
+                commit_id: short_id,
+                summary,
+            });
+        }
+
+        Ok(FileBlame {
+            path: path.to_string(),
+            lines,
+        })
+    }
+
+    /// Get blame info for a specific line
+    pub fn blame_line(&self, path: &str, line: usize) -> Result<Option<BlameInfo>> {
+        let blame = self.blame_file(path)?;
+        Ok(blame.lines.into_iter().find(|b| b.line == line))
     }
 }
