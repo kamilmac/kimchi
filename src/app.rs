@@ -958,6 +958,13 @@ impl App {
         spans.push(Span::styled("[", primary_bold));
         spans.push(Span::styled("wip", if wip_selected { highlight_bold } else { primary_bold }));
         spans.push(Span::styled("]", primary_bold));
+        spans.push(Span::styled("─", primary_bold));
+
+        // [browse] marker
+        let browse_selected = matches!(self.timeline_position, TimelinePosition::Browse);
+        spans.push(Span::styled("[", primary_bold));
+        spans.push(Span::styled("browse", if browse_selected { highlight_bold } else { primary_bold }));
+        spans.push(Span::styled("]", primary_bold));
 
         // State label
         let state_label = match self.timeline_position {
