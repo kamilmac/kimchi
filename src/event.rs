@@ -291,4 +291,8 @@ impl KeyInput {
     pub fn is_toggle_view_mode(key: &KeyEvent) -> bool {
         key.code == KeyCode::Char('s') && key.modifiers == KeyModifiers::NONE
     }
+
+    pub fn is_reply(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::CONTROL
+    }
 }

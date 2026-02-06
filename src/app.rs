@@ -580,6 +580,9 @@ impl App {
                     ReviewActionType::LineComment { pr_number, path, line } => {
                         ReviewAction::LineComment { pr_number, path, line }
                     }
+                    ReviewActionType::ReplyToComment { pr_number, comment_id } => {
+                        ReviewAction::ReplyToComment { pr_number, comment_id }
+                    }
                 };
                 self.input_modal_state.show(review_action);
             }
@@ -774,6 +777,9 @@ impl App {
             ReviewAction::LineComment { pr_number, path, line } => {
                 self.github.add_line_comment(*pr_number, path, *line, &body)
             }
+            ReviewAction::ReplyToComment { pr_number, comment_id } => {
+                self.github.reply_to_comment(*pr_number, *comment_id, &body)
+            }
             ReviewAction::CheckoutPr { .. } => unreachable!(), // Handled above
         };
 
@@ -787,6 +793,7 @@ impl App {
                     ReviewAction::RequestChanges { .. } => "Changes requested",
                     ReviewAction::Comment { .. } => "Comment posted",
                     ReviewAction::LineComment { .. } => "Line comment added",
+                    ReviewAction::ReplyToComment { .. } => "Reply posted",
                     ReviewAction::CheckoutPr { .. } => unreachable!(),
                 };
                 self.toast = Some(Toast::success(success_msg));

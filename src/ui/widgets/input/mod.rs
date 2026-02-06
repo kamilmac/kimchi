@@ -15,6 +15,7 @@ pub enum ReviewAction {
     RequestChanges { pr_number: u64 },
     Comment { pr_number: u64 },
     LineComment { pr_number: u64, path: String, line: u32 },
+    ReplyToComment { pr_number: u64, comment_id: u64 },
     CheckoutPr { pr_number: u64, branch: String },
 }
 
@@ -27,12 +28,15 @@ impl ReviewAction {
             Self::LineComment { pr_number, path, line } => {
                 format!("Comment on {}:{} - PR #{}", path, line, pr_number)
             }
+            Self::ReplyToComment { pr_number, .. } => {
+                format!("Reply to comment - PR #{}", pr_number)
+            }
             Self::CheckoutPr { pr_number, .. } => format!("Checkout PR #{}", pr_number),
         }
     }
 
     pub fn needs_body(&self) -> bool {
-        matches!(self, Self::RequestChanges { .. } | Self::Comment { .. } | Self::LineComment { .. })
+        matches!(self, Self::RequestChanges { .. } | Self::Comment { .. } | Self::LineComment { .. } | Self::ReplyToComment { .. })
     }
 
     pub fn confirmation_message(&self) -> Option<&str> {

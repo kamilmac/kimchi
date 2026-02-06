@@ -179,6 +179,7 @@ impl DiffViewState {
                         right_num: None,
                         line_type: LineType::Info,
                         is_header: false,
+                        comment_id: None,
                     }]
                 } else {
                     parse_diff(content)
@@ -284,6 +285,7 @@ impl DiffViewState {
             right_num: None,
             line_type: LineType::Comment,
             is_header: true,
+            comment_id: Some(comment.id),
         });
 
         // Add comment body lines with wrapping
@@ -297,6 +299,7 @@ impl DiffViewState {
                     right_num: None,
                     line_type: LineType::Comment,
                     is_header: true,
+                    comment_id: Some(comment.id),
                 });
             }
         }
@@ -379,6 +382,11 @@ impl DiffViewState {
         }
     }
 
+    /// Get the comment ID at the current cursor position (if on a comment line)
+    pub fn get_current_comment_id(&self) -> Option<u64> {
+        self.lines.get(self.cursor).and_then(|line| line.comment_id)
+    }
+
     pub fn ensure_visible(&mut self, height: usize) {
         let visible_height = height.saturating_sub(1);
         if self.cursor < self.offset {
@@ -429,6 +437,17 @@ impl DiffViewState {
     /// Handle key input, return action for App to dispatch
     /// pr_number is needed for line comments
     pub fn handle_key(&mut self, key: &KeyEvent, pr_number: Option<u64>) -> Action {
+        // Reply to comment (Ctrl+R when on a comment line)
+        if KeyInput::is_reply(key) {
+            if let (Some(pr_num), Some(comment_id)) = (pr_number, self.get_current_comment_id()) {
+                return Action::OpenReviewModal(ReviewActionType::ReplyToComment {
+                    pr_number: pr_num,
+                    comment_id,
+                });
+            }
+            return Action::None;
+        }
+
         // Line comment
         if KeyInput::is_comment(key) {
             if let (Some(pr_num), Some(path), Some(line)) = (
