@@ -295,4 +295,8 @@ impl KeyInput {
     pub fn is_reply(key: &KeyEvent) -> bool {
         key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::CONTROL
     }
+
+    pub fn is_blame(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('b') && key.modifiers == KeyModifiers::NONE
+    }
 }

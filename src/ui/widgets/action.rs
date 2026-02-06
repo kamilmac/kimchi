@@ -27,6 +27,10 @@ pub enum Action {
     // Review actions
     /// Open review modal
     OpenReviewModal(ReviewActionType),
+
+    // Blame actions
+    /// Show blame info for file and line
+    ShowBlame { path: String, line: usize },
 }
 
 /// Types of review actions

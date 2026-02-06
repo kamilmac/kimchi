@@ -437,6 +437,17 @@ impl DiffViewState {
     /// Handle key input, return action for App to dispatch
     /// pr_number is needed for line comments
     pub fn handle_key(&mut self, key: &KeyEvent, pr_number: Option<u64>) -> Action {
+        // Show blame for current line
+        if KeyInput::is_blame(key) {
+            if let (Some(path), Some(line)) = (
+                self.get_current_file().map(|s| s.to_string()),
+                self.get_current_line_number(),
+            ) {
+                return Action::ShowBlame { path, line };
+            }
+            return Action::None;
+        }
+
         // Reply to comment (Ctrl+R when on a comment line)
         if KeyInput::is_reply(key) {
             if let (Some(pr_num), Some(comment_id)) = (pr_number, self.get_current_comment_id()) {

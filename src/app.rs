@@ -78,6 +78,14 @@ impl Toast {
         }
     }
 
+    pub fn info(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            is_error: false,
+            created_at: Instant::now(),
+        }
+    }
+
     pub fn is_expired(&self) -> bool {
         self.created_at.elapsed() > Duration::from_secs(3)
     }
@@ -585,6 +593,30 @@ impl App {
                     }
                 };
                 self.input_modal_state.show(review_action);
+            }
+
+            Action::ShowBlame { path, line } => {
+                match self.git.blame_line(&path, line) {
+                    Ok(Some(blame)) => {
+                        let msg = format!(
+                            "{} ({}) - {}",
+                            blame.author,
+                            blame.date,
+                            if blame.summary.len() > 50 {
+                                format!("{}...", &blame.summary[..50])
+                            } else {
+                                blame.summary
+                            }
+                        );
+                        self.toast = Some(Toast::info(msg));
+                    }
+                    Ok(None) => {
+                        self.toast = Some(Toast::info("No blame info for this line"));
+                    }
+                    Err(e) => {
+                        self.toast = Some(Toast::error(format!("Blame failed: {}", e)));
+                    }
+                }
             }
         }
 
