@@ -45,6 +45,23 @@ pub struct DiffStats {
     pub removed: usize,
 }
 
+/// Blame information for a single line
+#[derive(Debug, Clone)]
+pub struct BlameInfo {
+    pub line: usize,
+    pub author: String,
+    pub date: String,
+    pub commit_id: String,
+    pub summary: String,
+}
+
+/// Blame data for a file
+#[derive(Debug, Clone, Default)]
+pub struct FileBlame {
+    pub path: String,
+    pub lines: Vec<BlameInfo>,
+}
+
 /// Timeline position for viewing PR history
 /// Order: Browse → Wip → FullDiff → -1 → -2 → ... → -16
 /// FullDiff is the default (primary code review view)
