@@ -28,6 +28,7 @@ pub struct TreeEntry {
     pub collapsed: bool,
     pub children: Vec<String>,
     pub has_comments: bool,
+    pub ignored: bool,
 }
 
 /// File list widget state
@@ -205,7 +206,7 @@ fn build_tree(
 
     for file in files {
         let parts: Vec<&str> = file.path.split('/').collect();
-        insert_into_tree(&mut root_children, &parts, 0, file.status);
+        insert_into_tree(&mut root_children, &parts, 0, file.status, file.is_dir);
     }
 
     // Sort tree recursively (dirs first at each level, then alphabetically)
@@ -227,6 +228,7 @@ fn build_tree(
         collapsed: collapsed.contains(""),
         children: all_paths,
         has_comments: false,
+        ignored: false,
     });
 
     if collapsed.contains("") {
@@ -239,7 +241,7 @@ fn build_tree(
     entries
 }
 
-fn insert_into_tree(nodes: &mut Vec<TreeNode>, parts: &[&str], idx: usize, status: FileStatus) {
+fn insert_into_tree(nodes: &mut Vec<TreeNode>, parts: &[&str], idx: usize, status: FileStatus, entry_is_dir: bool) {
     if idx >= parts.len() {
         return;
     }
@@ -253,19 +255,21 @@ fn insert_into_tree(nodes: &mut Vec<TreeNode>, parts: &[&str], idx: usize, statu
 
     if let Some(i) = node_idx {
         if !is_last {
-            insert_into_tree(&mut nodes[i].children, parts, idx + 1, status);
+            insert_into_tree(&mut nodes[i].children, parts, idx + 1, status, entry_is_dir);
         }
     } else {
+        // For the last element, use entry_is_dir to determine if it's a directory
+        let node_is_dir = if is_last { entry_is_dir } else { true };
         let mut node = TreeNode {
             name: name.to_string(),
             path,
-            is_dir: !is_last,
+            is_dir: node_is_dir,
             status: if is_last { status } else { FileStatus::Unchanged },
             children: vec![],
         };
 
         if !is_last {
-            insert_into_tree(&mut node.children, parts, idx + 1, status);
+            insert_into_tree(&mut node.children, parts, idx + 1, status, entry_is_dir);
         }
 
         nodes.push(node);
@@ -328,6 +332,17 @@ fn flatten_tree(
             files.iter().any(|f| f.path == node.path && f.uncommitted)
         };
 
+        // Check ignored status
+        let ignored = if node.is_dir {
+            // Check if directory itself is ignored, or all children are ignored
+            files.iter().any(|f| f.path == node.path && f.ignored && f.is_dir) ||
+            (!children.is_empty() && children.iter().all(|child_path| {
+                files.iter().any(|f| &f.path == child_path && f.ignored)
+            }))
+        } else {
+            files.iter().any(|f| f.path == node.path && f.ignored)
+        };
+
         entries.push(TreeEntry {
             display: node.name.clone(),
             path: node.path.clone(),
@@ -339,6 +354,7 @@ fn flatten_tree(
             collapsed: is_collapsed,
             children,
             has_comments: node_has_comments,
+            ignored,
         });
 
         // Recurse into children if not collapsed
@@ -432,11 +448,11 @@ fn render_entry(entry: &TreeEntry, selected: bool, colors: &Colors) -> Line<'sta
         spans.push(Span::raw("  ".to_string()));
     }
 
-    // Name
+    // Name (dimmed if ignored)
     let name_style = if selected {
         colors.style_selected()
-    } else if entry.is_dir {
-        colors.style_muted()
+    } else if entry.ignored {
+        colors.style_muted() // Dim ignored files/folders
     } else {
         Style::reset().fg(colors.text)
     };

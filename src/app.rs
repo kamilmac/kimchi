@@ -448,7 +448,7 @@ impl App {
         }
         if KeyInput::is_timeline_prev(&key) {
             // . key - go newer (right on timeline)
-            self.timeline_position = self.timeline_position.next(self.commit_count);
+            self.timeline_position = self.timeline_position.next();
             self.refresh_timeline()?;
             return Ok(());
         }

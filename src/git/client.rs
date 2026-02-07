@@ -99,7 +99,7 @@ impl GitClient {
             };
 
             let uncommitted = uncommitted_paths.contains(&path);
-            entries.push(StatusEntry { path: path.clone(), status, uncommitted });
+            entries.push(StatusEntry { path: path.clone(), status, uncommitted, ignored: false, is_dir: false });
             seen_paths.insert(path);
         }
 
@@ -112,6 +112,8 @@ impl GitClient {
                     path: path.clone(),
                     status,
                     uncommitted: true,
+                    ignored: false,
+                    is_dir: false,
                 });
             }
         }
@@ -169,6 +171,8 @@ impl GitClient {
                 path,
                 status,
                 uncommitted: true,
+                ignored: false,
+                is_dir: false,
             });
         }
 
@@ -525,6 +529,8 @@ impl GitClient {
                         path,
                         status,
                         uncommitted: false,
+                        ignored: false,
+                        is_dir: false,
                     });
                 }
 
@@ -534,32 +540,73 @@ impl GitClient {
         }
     }
 
-    /// List all tracked files in the repository (for browse mode)
-    /// Respects .gitignore and only shows files in HEAD
+    /// List all files in the repository directory (for browse/files mode)
+    /// Walks filesystem and marks gitignored files
     fn list_all_files(&self) -> Result<Vec<StatusEntry>> {
-        let head_tree = self.repo.head()?.peel_to_tree()?;
         let mut entries = Vec::new();
-
-        // Walk the tree to get all files
-        head_tree.walk(git2::TreeWalkMode::PreOrder, |dir, entry| {
-            // Only process blobs (files), not trees (directories)
-            if entry.kind() == Some(git2::ObjectType::Blob) {
-                let path = if dir.is_empty() {
-                    entry.name().unwrap_or("").to_string()
-                } else {
-                    format!("{}{}", dir, entry.name().unwrap_or(""))
-                };
-
-                entries.push(StatusEntry {
-                    path,
-                    status: FileStatus::Unchanged,
-                    uncommitted: false,
-                });
-            }
-            git2::TreeWalkResult::Ok
-        })?;
-
+        self.walk_dir(&self.path, &mut entries, 0)?;
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(entries)
+    }
+
+    /// Recursively walk directory and collect files
+    /// Max depth of 20 to prevent runaway recursion
+    fn walk_dir(&self, dir: &Path, entries: &mut Vec<StatusEntry>, depth: usize) -> Result<()> {
+        const MAX_DEPTH: usize = 20;
+        if depth > MAX_DEPTH {
+            return Ok(());
+        }
+        let read_dir = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return Ok(()), // Skip unreadable directories
+        };
+
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            // Skip .git directory
+            if file_name_str == ".git" {
+                continue;
+            }
+
+            // Get relative path from repo root
+            let rel_path = path.strip_prefix(&self.path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if rel_path.is_empty() {
+                continue;
+            }
+
+            // Check if path is ignored
+            let ignored = self.repo.status_should_ignore(Path::new(&rel_path)).unwrap_or(false);
+
+            if path.is_dir() {
+                if ignored {
+                    // Add ignored directory directly (don't recurse into it)
+                    entries.push(StatusEntry {
+                        path: rel_path,
+                        status: FileStatus::Unchanged,
+                        uncommitted: false,
+                        ignored: true,
+                        is_dir: true,
+                    });
+                } else {
+                    self.walk_dir(&path, entries, depth + 1)?;
+                }
+            } else {
+                entries.push(StatusEntry {
+                    path: rel_path,
+                    status: FileStatus::Unchanged,
+                    uncommitted: false,
+                    ignored,
+                    is_dir: false,
+                });
+            }
+        }
+
+        Ok(())
     }
 }

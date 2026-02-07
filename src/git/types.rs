@@ -28,13 +28,21 @@ impl fmt::Display for FileStatus {
     }
 }
 
-/// A file with its status
+/// A file or directory entry with its status
+///
+/// Used across all timeline modes. Some fields are mode-specific:
+/// - `ignored` and `is_dir`: Only populated in Browse mode (filesystem walk)
+/// - `uncommitted`: Only relevant in diff modes (Wip, FullDiff, CommitDiff)
 #[derive(Debug, Clone)]
 pub struct StatusEntry {
     pub path: String,
     pub status: FileStatus,
-    /// True if file has uncommitted changes
+    /// True if file has uncommitted changes (diff modes only)
     pub uncommitted: bool,
+    /// True if file/dir is gitignored (Browse mode only)
+    pub ignored: bool,
+    /// True if this is a directory (Browse mode only, for ignored dirs)
+    pub is_dir: bool,
 }
 
 
@@ -63,7 +71,7 @@ pub enum TimelinePosition {
 
 impl TimelinePosition {
     /// Move to next position (towards newer: -16 → ... → -1 → Wip → FullDiff → Browse)
-    pub fn next(self, _max_commits: usize) -> Self {
+    pub fn next(self) -> Self {
         match self {
             Self::CommitDiff(1) => Self::Wip,
             Self::CommitDiff(n) => Self::CommitDiff(n - 1),
