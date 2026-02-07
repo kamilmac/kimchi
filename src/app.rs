@@ -226,6 +226,32 @@ impl App {
     fn refresh_timeline(&mut self) -> Result<()> {
         // Load files based on new timeline position
         let files = self.git.status_at_position(self.timeline_position)?;
+
+        // In browse mode, collapse all directories by default for better UX with large repos
+        if matches!(self.timeline_position, TimelinePosition::Browse) {
+            // Collect all directory paths from files
+            let mut dirs = std::collections::HashSet::new();
+            for file in &files {
+                let path = std::path::Path::new(&file.path);
+                let mut current = std::path::PathBuf::new();
+                for component in path.components() {
+                    if current.as_os_str().is_empty() {
+                        current.push(component);
+                    } else {
+                        current.push(component);
+                    }
+                    // Only add parent directories (not the file itself)
+                    if current.to_string_lossy() != file.path {
+                        dirs.insert(current.to_string_lossy().to_string());
+                    }
+                }
+            }
+            self.file_list_state.collapsed = dirs;
+        } else {
+            // Clear collapsed state when leaving browse mode
+            self.file_list_state.collapsed.clear();
+        }
+
         self.file_list_state.set_files(files);
 
         // Update preview with new diff
@@ -644,19 +670,38 @@ impl App {
             return;
         }
 
+        let is_browse_mode = matches!(self.timeline_position, TimelinePosition::Browse);
+
         let content = if let Some(entry) = self.file_list_state.selected() {
             if entry.is_root {
                 PreviewContent::Empty
             } else if entry.is_dir {
-                // Directory selected - combined diff at timeline position
-                let diff = self
-                    .git
-                    .diff_files_at_position(&entry.children, self.timeline_position)
-                    .unwrap_or_default();
-                PreviewContent::FolderDiff {
-                    path: entry.path.clone(),
-                    content: diff,
+                if is_browse_mode {
+                    // In browse mode, directories don't have a combined view
+                    PreviewContent::Empty
+                } else {
+                    // Directory selected - combined diff at timeline position
+                    let diff = self
+                        .git
+                        .diff_files_at_position(&entry.children, self.timeline_position)
+                        .unwrap_or_default();
+                    PreviewContent::FolderDiff {
+                        path: entry.path.clone(),
+                        content: diff,
+                    }
                 }
+            } else if is_browse_mode {
+                // Browse mode - show file content
+                let file_content = self
+                    .git
+                    .diff_at_position(&entry.path, self.timeline_position)
+                    .unwrap_or_default();
+                let content = PreviewContent::FileContent {
+                    path: entry.path.clone(),
+                    content: file_content,
+                };
+                self.diff_view_state.set_content_highlighted(content, &self.highlighter);
+                return;
             } else {
                 // File selected - diff with syntax highlighting at timeline position
                 let diff = self
@@ -951,9 +996,17 @@ impl App {
         spans.push(Span::styled("[", primary_bold));
         spans.push(Span::styled("wip", if wip_selected { highlight_bold } else { primary_bold }));
         spans.push(Span::styled("]", primary_bold));
+        spans.push(Span::styled("─", primary_bold));
+
+        // [browse] marker
+        let browse_selected = matches!(self.timeline_position, TimelinePosition::Browse);
+        spans.push(Span::styled("[", primary_bold));
+        spans.push(Span::styled("browse", if browse_selected { highlight_bold } else { primary_bold }));
+        spans.push(Span::styled("]", primary_bold));
 
         // State label
         let state_label = match self.timeline_position {
+            TimelinePosition::Browse => "browse",
             TimelinePosition::Wip => "wip",
             TimelinePosition::FullDiff => "all changes",
             TimelinePosition::CommitDiff(n) => match n {
@@ -991,6 +1044,7 @@ impl App {
 
         // Right: position info
         let right_content = match self.timeline_position {
+            TimelinePosition::Browse => "browse all files ".to_string(),
             TimelinePosition::FullDiff => "all changes (base → head) ".to_string(),
             TimelinePosition::Wip => "uncommitted changes ".to_string(),
             TimelinePosition::CommitDiff(n) => {
@@ -1022,7 +1076,11 @@ impl App {
 
     /// Generate file list title
     fn file_list_title(&self) -> String {
-        format!("Files ({})", self.file_list_state.file_count())
+        if matches!(self.timeline_position, TimelinePosition::Browse) {
+            format!("Browse ({})", self.file_list_state.file_count())
+        } else {
+            format!("Files ({})", self.file_list_state.file_count())
+        }
     }
 
     /// Get commit message for current timeline position (for status bar)

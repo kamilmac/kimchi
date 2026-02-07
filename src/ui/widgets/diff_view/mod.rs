@@ -15,7 +15,7 @@ use crate::github::PrInfo;
 use crate::ui::Highlighter;
 
 use parser::{
-    extract_diff_sides, is_binary, parse_diff,
+    extract_diff_sides, is_binary, parse_diff, parse_file_content,
     parse_hunk_header, truncate_or_pad, wrap_text, DiffLine, LineType,
 };
 use super::{Action, ReviewActionType};
@@ -30,6 +30,11 @@ pub enum PreviewContent {
         content: String,
     },
     FolderDiff {
+        path: String,
+        content: String,
+    },
+    /// File content for browse mode (not a diff)
+    FileContent {
         path: String,
         content: String,
     },
@@ -101,7 +106,7 @@ impl DiffViewState {
     fn set_content_with_highlighter(&mut self, content: PreviewContent, highlighter: Option<&Highlighter>) {
         // Store current file path for comment lookup
         self.current_file = match &content {
-            PreviewContent::FileDiff { path, .. } => path.clone(),
+            PreviewContent::FileDiff { path, .. } | PreviewContent::FileContent { path, .. } => path.clone(),
             _ => String::new(),
         };
 
@@ -109,49 +114,59 @@ impl DiffViewState {
         self.highlighted_left.clear();
         self.highlighted_right.clear();
 
-        // Apply syntax highlighting for diffs
+        // Apply syntax highlighting
         if let Some(h) = highlighter {
-            if let PreviewContent::FileDiff { path, content: diff_text } = &content {
-                let (left_lines, right_lines) = extract_diff_sides(diff_text);
-                let left_highlighted = h.highlight_file(&left_lines.join("\n"), path);
-                let right_highlighted = h.highlight_file(&right_lines.join("\n"), path);
-
-                let mut left_line_num = 1usize;
-                let mut right_line_num = 1usize;
-                let mut left_idx = 0usize;
-                let mut right_idx = 0usize;
-
-                for line in diff_text.lines() {
-                    if line.starts_with("@@") {
-                        if let Some((l, r)) = parse_hunk_header(line) {
-                            left_line_num = l;
-                            right_line_num = r;
-                        }
-                    } else if line.starts_with('-') && !line.starts_with("---") {
-                        if let Some(hl) = left_highlighted.get(left_idx) {
-                            self.highlighted_left.insert(left_line_num, hl.clone());
-                        }
-                        left_line_num += 1;
-                        left_idx += 1;
-                    } else if line.starts_with('+') && !line.starts_with("+++") {
-                        if let Some(hl) = right_highlighted.get(right_idx) {
-                            self.highlighted_right.insert(right_line_num, hl.clone());
-                        }
-                        right_line_num += 1;
-                        right_idx += 1;
-                    } else if line.starts_with(' ') {
-                        if let Some(hl) = left_highlighted.get(left_idx) {
-                            self.highlighted_left.insert(left_line_num, hl.clone());
-                        }
-                        if let Some(hl) = right_highlighted.get(right_idx) {
-                            self.highlighted_right.insert(right_line_num, hl.clone());
-                        }
-                        left_line_num += 1;
-                        right_line_num += 1;
-                        left_idx += 1;
-                        right_idx += 1;
+            match &content {
+                PreviewContent::FileContent { path, content: file_text } => {
+                    // File content: highlight and store in highlighted_left
+                    let highlighted = h.highlight_file(file_text, path);
+                    for (i, hl) in highlighted.into_iter().enumerate() {
+                        self.highlighted_left.insert(i + 1, hl);
                     }
                 }
+                PreviewContent::FileDiff { path, content: diff_text } => {
+                    let (left_lines, right_lines) = extract_diff_sides(diff_text);
+                    let left_highlighted = h.highlight_file(&left_lines.join("\n"), path);
+                    let right_highlighted = h.highlight_file(&right_lines.join("\n"), path);
+
+                    let mut left_line_num = 1usize;
+                    let mut right_line_num = 1usize;
+                    let mut left_idx = 0usize;
+                    let mut right_idx = 0usize;
+
+                    for line in diff_text.lines() {
+                        if line.starts_with("@@") {
+                            if let Some((l, r)) = parse_hunk_header(line) {
+                                left_line_num = l;
+                                right_line_num = r;
+                            }
+                        } else if line.starts_with('-') && !line.starts_with("---") {
+                            if let Some(hl) = left_highlighted.get(left_idx) {
+                                self.highlighted_left.insert(left_line_num, hl.clone());
+                            }
+                            left_line_num += 1;
+                            left_idx += 1;
+                        } else if line.starts_with('+') && !line.starts_with("+++") {
+                            if let Some(hl) = right_highlighted.get(right_idx) {
+                                self.highlighted_right.insert(right_line_num, hl.clone());
+                            }
+                            right_line_num += 1;
+                            right_idx += 1;
+                        } else if line.starts_with(' ') {
+                            if let Some(hl) = left_highlighted.get(left_idx) {
+                                self.highlighted_left.insert(left_line_num, hl.clone());
+                            }
+                            if let Some(hl) = right_highlighted.get(right_idx) {
+                                self.highlighted_right.insert(right_line_num, hl.clone());
+                            }
+                            left_line_num += 1;
+                            right_line_num += 1;
+                            left_idx += 1;
+                            right_idx += 1;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -170,6 +185,20 @@ impl DiffViewState {
     fn parse_content(&mut self) {
         let base_lines = match &self.content {
             PreviewContent::Empty => vec![],
+            PreviewContent::FileContent { content, .. } => {
+                if is_binary(content) {
+                    vec![DiffLine {
+                        left_text: Some("Binary file".to_string()),
+                        right_text: None,
+                        left_num: None,
+                        right_num: None,
+                        line_type: LineType::Info,
+                        is_header: false,
+                    }]
+                } else {
+                    parse_file_content(content)
+                }
+            }
             PreviewContent::FileDiff { content, .. } | PreviewContent::FolderDiff { content, .. } => {
                 if is_binary(content) {
                     vec![DiffLine {
@@ -269,6 +298,7 @@ impl DiffViewState {
         match &self.content {
             PreviewContent::Empty => "Preview".to_string(),
             PreviewContent::FileDiff { path, .. } => path.clone(),
+            PreviewContent::FileContent { path, .. } => path.clone(),
             PreviewContent::FolderDiff { path, .. } => format!("{}/", path),
         }
     }
@@ -337,7 +367,7 @@ impl DiffViewState {
     /// Get the current file path being displayed
     pub fn get_current_file(&self) -> Option<&str> {
         match &self.content {
-            PreviewContent::FileDiff { path, .. } => Some(path),
+            PreviewContent::FileDiff { path, .. } | PreviewContent::FileContent { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -486,7 +516,7 @@ impl<'a> StatefulWidget for DiffView<'a> {
 
         if state.lines.is_empty() {
             let (msg, hint) = match &state.content {
-                PreviewContent::Empty => ("Select a file to view diff", "Press ? for help"),
+                PreviewContent::Empty => ("Select a file to view", "Press ? for help"),
                 _ => ("No changes", ""),
             };
             let line = Line::from(Span::styled(msg, self.colors.style_muted()));
@@ -511,6 +541,7 @@ impl<'a> StatefulWidget for DiffView<'a> {
 
         let pane_width = ((inner.width as usize).saturating_sub(3)) / 2; // -3 for separator
         let has_diff_highlighting = !state.highlighted_left.is_empty() || !state.highlighted_right.is_empty();
+        let is_file_content = matches!(state.content, PreviewContent::FileContent { .. });
 
         for (i, (idx, diff_line)) in visible_lines.into_iter().enumerate() {
             let y = inner.y + i as u16;
@@ -518,6 +549,10 @@ impl<'a> StatefulWidget for DiffView<'a> {
 
             let line = if diff_line.is_header {
                 render_header_line(diff_line, is_cursor, self.colors)
+            } else if is_file_content {
+                // File content view (browse mode) - single column with syntax highlighting
+                let hl = diff_line.left_num.and_then(|n| state.highlighted_left.get(&n));
+                render_file_content_line(diff_line, hl, is_cursor, self.colors)
             } else if state.view_mode == DiffViewMode::Unified {
                 let hl = match diff_line.line_type {
                     LineType::Added => diff_line.right_num.and_then(|n| state.highlighted_right.get(&n)),
@@ -877,6 +912,49 @@ fn render_unified_diff_line(
             base_style.add_modifier(ratatui::style::Modifier::REVERSED)
         } else {
             base_style
+        };
+        spans.push(Span::styled(text, content_style));
+    }
+
+    Line::from(spans)
+}
+
+/// Render a file content line (single column, for browse mode)
+fn render_file_content_line(
+    diff_line: &DiffLine,
+    highlight: Option<&Vec<(String, Style)>>,
+    cursor: bool,
+    colors: &Colors,
+) -> Line<'static> {
+    let mut spans = vec![];
+    let num_width = 4;
+
+    let line_num = diff_line.left_num
+        .map(|n| format!("{:>width$}", n, width = num_width))
+        .unwrap_or_else(|| " ".repeat(num_width));
+
+    spans.push(Span::styled(line_num, colors.style_muted()));
+    spans.push(Span::styled(" ", colors.style_muted()));
+
+    // Content with syntax highlighting if available
+    if let Some(hl) = highlight {
+        for (hl_text, hl_style) in hl {
+            let text = hl_text.replace('\t', "    ");
+            let style = if cursor {
+                hl_style.add_modifier(ratatui::style::Modifier::REVERSED)
+            } else {
+                *hl_style
+            };
+            spans.push(Span::styled(text, style));
+        }
+    } else {
+        let text = diff_line.left_text.as_deref().unwrap_or("");
+        let text = text.replace('\t', "    ");
+        let style = Style::reset().fg(colors.text);
+        let content_style = if cursor {
+            style.add_modifier(ratatui::style::Modifier::REVERSED)
+        } else {
+            style
         };
         spans.push(Span::styled(text, content_style));
     }

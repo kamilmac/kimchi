@@ -48,15 +48,19 @@ impl<'a> Widget for HelpModal<'a> {
             Line::from(""),
             Line::from(Span::styled("Timeline", self.colors.style_header())),
             Line::from(Span::styled(
-                "  T─I─M─E─C─O─P─○─○─○─ ... ─○─○─○─[all]─[wip]",
+                "  T─I─M─E─C─O─P─○─○─○─ ... ─[all]─[wip]─[browse]",
                 self.colors.style_muted(),
             )),
             Line::from(Span::styled(
-                "                -16          -1   all   wip",
+                "                -16     -1   all   wip   browse",
                 self.colors.style_muted(),
             )),
             Line::from(Span::styled(
-                "  ← older                           newer →",
+                "  ← older                            newer →",
+                self.colors.style_muted(),
+            )),
+            Line::from(Span::styled(
+                "  browse: view all files (not just changes)",
                 self.colors.style_muted(),
             )),
             Line::from(""),

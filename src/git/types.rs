@@ -46,10 +46,12 @@ pub struct DiffStats {
 }
 
 /// Timeline position for viewing PR history
-/// Order: Wip → FullDiff → -1 → -2 → ... → -16
+/// Order: Browse → Wip → FullDiff → -1 → -2 → ... → -16
 /// FullDiff is the default (primary code review view)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimelinePosition {
+    /// Browse all files in repo (not just changed files)
+    Browse,
     /// View only uncommitted changes: HEAD → working tree
     Wip,
     /// View all committed changes: base → HEAD (default)
@@ -60,9 +62,10 @@ pub enum TimelinePosition {
 }
 
 impl TimelinePosition {
-    /// Move to next position (towards older commits: Wip → FullDiff → -1 → -2 → ...)
+    /// Move to next position (towards older commits: Browse → Wip → FullDiff → -1 → -2 → ...)
     pub fn next(self, max_commits: usize) -> Self {
         match self {
+            Self::Browse => Self::Wip,
             Self::Wip => Self::FullDiff,
             Self::FullDiff => {
                 if max_commits > 0 {
@@ -76,10 +79,11 @@ impl TimelinePosition {
         }
     }
 
-    /// Move to previous position (towards newer: ... → -1 → FullDiff → Wip)
+    /// Move to previous position (towards newer: ... → -1 → FullDiff → Wip → Browse)
     pub fn prev(self) -> Self {
         match self {
-            Self::Wip => Self::Wip, // Can't go newer than wip
+            Self::Browse => Self::Browse, // Can't go newer than browse
+            Self::Wip => Self::Browse,
             Self::FullDiff => Self::Wip,
             Self::CommitDiff(1) => Self::FullDiff,
             Self::CommitDiff(n) => Self::CommitDiff(n - 1),

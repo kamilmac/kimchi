@@ -291,7 +291,13 @@ impl GitClient {
     pub fn diff_stats_at_position(&self, position: super::TimelinePosition) -> Result<DiffStats> {
         use super::TimelinePosition;
 
+        // Browse mode has no diff stats
+        if matches!(position, TimelinePosition::Browse) {
+            return Ok(DiffStats::default());
+        }
+
         let diff = match position {
+            TimelinePosition::Browse => unreachable!(), // Handled above
             TimelinePosition::FullDiff => {
                 let base = match &self.base_branch {
                     Some(b) => b,
@@ -410,6 +416,11 @@ impl GitClient {
     pub fn diff_at_position(&self, path: &str, position: super::TimelinePosition) -> Result<String> {
         use super::TimelinePosition;
 
+        // Browse mode: return file content, not diff
+        if matches!(position, TimelinePosition::Browse) {
+            return self.read_file(path);
+        }
+
         let base = match &self.base_branch {
             Some(b) => b,
             None => return self.working_diff(path),
@@ -422,6 +433,7 @@ impl GitClient {
         opts.pathspec(path);
 
         match position {
+            TimelinePosition::Browse => unreachable!(), // Handled above
             TimelinePosition::FullDiff => {
                 // Base to HEAD (all committed changes)
                 let head_tree = self.repo.head()?.peel_to_tree()?;
@@ -468,6 +480,10 @@ impl GitClient {
         log::debug!("status_at_position: {:?}", position);
 
         match position {
+            TimelinePosition::Browse => {
+                // Show all tracked files in the repository
+                self.list_all_files()
+            }
             TimelinePosition::FullDiff => {
                 // Show all committed changes: base → HEAD
                 self.status()
@@ -516,5 +532,34 @@ impl GitClient {
                 Ok(entries)
             }
         }
+    }
+
+    /// List all tracked files in the repository (for browse mode)
+    /// Respects .gitignore and only shows files in HEAD
+    fn list_all_files(&self) -> Result<Vec<StatusEntry>> {
+        let head_tree = self.repo.head()?.peel_to_tree()?;
+        let mut entries = Vec::new();
+
+        // Walk the tree to get all files
+        head_tree.walk(git2::TreeWalkMode::PreOrder, |dir, entry| {
+            // Only process blobs (files), not trees (directories)
+            if entry.kind() == Some(git2::ObjectType::Blob) {
+                let path = if dir.is_empty() {
+                    entry.name().unwrap_or("").to_string()
+                } else {
+                    format!("{}{}", dir, entry.name().unwrap_or(""))
+                };
+
+                entries.push(StatusEntry {
+                    path,
+                    status: FileStatus::Unchanged,
+                    uncommitted: false,
+                });
+            }
+            git2::TreeWalkResult::Ok
+        })?;
+
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
     }
 }

@@ -219,3 +219,21 @@ pub fn truncate_or_pad(s: &str, width: usize) -> String {
         format!("{:width$}", s, width = width)
     }
 }
+
+/// Parse file content (not diff) into DiffLines for display
+pub fn parse_file_content(content: &str) -> Vec<DiffLine> {
+    let mut lines = Vec::new();
+
+    for (i, line) in content.lines().enumerate() {
+        lines.push(DiffLine {
+            left_text: Some(line.to_string()),
+            right_text: None,
+            left_num: Some(i + 1),
+            right_num: None,
+            line_type: LineType::Context,
+            is_header: false,
+        });
+    }
+
+    lines
+}
