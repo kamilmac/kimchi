@@ -99,7 +99,7 @@ impl GitClient {
             };
 
             let uncommitted = uncommitted_paths.contains(&path);
-            entries.push(StatusEntry { path: path.clone(), status, uncommitted });
+            entries.push(StatusEntry { path: path.clone(), status, uncommitted, entry_type: EntryType::Tracked });
             seen_paths.insert(path);
         }
 
@@ -112,6 +112,7 @@ impl GitClient {
                     path: path.clone(),
                     status,
                     uncommitted: true,
+                    entry_type: EntryType::Tracked,
                 });
             }
         }
@@ -169,6 +170,7 @@ impl GitClient {
                 path,
                 status,
                 uncommitted: true,
+                entry_type: EntryType::Tracked,
             });
         }
 
@@ -291,7 +293,13 @@ impl GitClient {
     pub fn diff_stats_at_position(&self, position: super::TimelinePosition) -> Result<DiffStats> {
         use super::TimelinePosition;
 
+        // Browse mode has no diff stats
+        if matches!(position, TimelinePosition::Browse) {
+            return Ok(DiffStats::default());
+        }
+
         let diff = match position {
+            TimelinePosition::Browse => unreachable!(), // Handled above
             TimelinePosition::FullDiff => {
                 let base = match &self.base_branch {
                     Some(b) => b,
@@ -410,6 +418,11 @@ impl GitClient {
     pub fn diff_at_position(&self, path: &str, position: super::TimelinePosition) -> Result<String> {
         use super::TimelinePosition;
 
+        // Browse mode: return file content, not diff
+        if matches!(position, TimelinePosition::Browse) {
+            return self.read_file(path);
+        }
+
         let base = match &self.base_branch {
             Some(b) => b,
             None => return self.working_diff(path),
@@ -422,6 +435,7 @@ impl GitClient {
         opts.pathspec(path);
 
         match position {
+            TimelinePosition::Browse => unreachable!(), // Handled above
             TimelinePosition::FullDiff => {
                 // Base to HEAD (all committed changes)
                 let head_tree = self.repo.head()?.peel_to_tree()?;
@@ -468,6 +482,10 @@ impl GitClient {
         log::debug!("status_at_position: {:?}", position);
 
         match position {
+            TimelinePosition::Browse => {
+                // Show all tracked files in the repository
+                self.list_all_files()
+            }
             TimelinePosition::FullDiff => {
                 // Show all committed changes: base → HEAD
                 self.status()
@@ -509,6 +527,7 @@ impl GitClient {
                         path,
                         status,
                         uncommitted: false,
+                        entry_type: EntryType::Tracked,
                     });
                 }
 
@@ -516,5 +535,74 @@ impl GitClient {
                 Ok(entries)
             }
         }
+    }
+
+    /// List all files in the repository directory (for browse/files mode)
+    /// Walks filesystem and marks gitignored files
+    fn list_all_files(&self) -> Result<Vec<StatusEntry>> {
+        let mut entries = Vec::new();
+        self.walk_dir(&self.path, &mut entries, 0)?;
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
+    }
+
+    /// Recursively walk directory and collect files
+    /// Max depth of 20 to prevent runaway recursion
+    fn walk_dir(&self, dir: &Path, entries: &mut Vec<StatusEntry>, depth: usize) -> Result<()> {
+        const MAX_DEPTH: usize = 20;
+        if depth > MAX_DEPTH {
+            return Ok(());
+        }
+        let read_dir = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return Ok(()), // Skip unreadable directories
+        };
+
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+
+            // Skip .git directory
+            if file_name_str == ".git" {
+                continue;
+            }
+
+            // Get relative path from repo root
+            let rel_path = path.strip_prefix(&self.path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if rel_path.is_empty() {
+                continue;
+            }
+
+            // Check if path is ignored
+            let ignored = self.repo.status_should_ignore(Path::new(&rel_path)).unwrap_or(false);
+
+            if path.is_dir() {
+                if ignored {
+                    // Add ignored directory directly (don't recurse into it)
+                    entries.push(StatusEntry {
+                        path: rel_path,
+                        status: FileStatus::Unchanged,
+                        uncommitted: false,
+                        entry_type: EntryType::IgnoredDir,
+                    });
+                } else {
+                    self.walk_dir(&path, entries, depth + 1)?;
+                }
+            } else {
+                let entry_type = if ignored { EntryType::Ignored } else { EntryType::Tracked };
+                entries.push(StatusEntry {
+                    path: rel_path,
+                    status: FileStatus::Unchanged,
+                    uncommitted: false,
+                    entry_type,
+                });
+            }
+        }
+
+        Ok(())
     }
 }

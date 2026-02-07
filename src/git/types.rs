@@ -28,13 +28,37 @@ impl fmt::Display for FileStatus {
     }
 }
 
-/// A file with its status
+/// Type of entry in file listing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EntryType {
+    /// Normal tracked file
+    #[default]
+    Tracked,
+    /// Gitignored file (Browse mode only)
+    Ignored,
+    /// Gitignored directory - shown but not recursed into (Browse mode only)
+    IgnoredDir,
+}
+
+impl EntryType {
+    pub fn is_ignored(self) -> bool {
+        matches!(self, Self::Ignored | Self::IgnoredDir)
+    }
+
+    pub fn is_dir(self) -> bool {
+        matches!(self, Self::IgnoredDir)
+    }
+}
+
+/// A file or directory entry with its status
 #[derive(Debug, Clone)]
 pub struct StatusEntry {
     pub path: String,
     pub status: FileStatus,
-    /// True if file has uncommitted changes
+    /// True if file has uncommitted changes (diff modes only)
     pub uncommitted: bool,
+    /// Entry type - tracked, ignored file, or ignored directory
+    pub entry_type: EntryType,
 }
 
 
@@ -46,43 +70,47 @@ pub struct DiffStats {
 }
 
 /// Timeline position for viewing PR history
-/// Order: Wip → FullDiff → -1 → -2 → ... → -16
+/// Order (older → newer): -16 → ... → -1 → Wip → FullDiff → Browse
 /// FullDiff is the default (primary code review view)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimelinePosition {
+    /// View changes from a single commit: HEAD~N → HEAD~(N-1)
+    CommitDiff(usize),
     /// View only uncommitted changes: HEAD → working tree
     Wip,
     /// View all committed changes: base → HEAD (default)
     #[default]
     FullDiff,
-    /// View changes from a single commit: HEAD~N → HEAD~(N-1)
-    CommitDiff(usize),
+    /// Browse all files in repo (not just changed files)
+    Browse,
 }
 
 impl TimelinePosition {
-    /// Move to next position (towards older commits: Wip → FullDiff → -1 → -2 → ...)
-    pub fn next(self, max_commits: usize) -> Self {
+    /// Move to next position (towards newer: -16 → ... → -1 → Wip → FullDiff → Browse)
+    pub fn next(self) -> Self {
         match self {
+            Self::CommitDiff(1) => Self::Wip,
+            Self::CommitDiff(n) => Self::CommitDiff(n - 1),
             Self::Wip => Self::FullDiff,
-            Self::FullDiff => {
+            Self::FullDiff => Self::Browse,
+            Self::Browse => Self::Browse, // Can't go newer than browse
+        }
+    }
+
+    /// Move to previous position (towards older: Browse → FullDiff → Wip → -1 → ... → -16)
+    pub fn prev(self, max_commits: usize) -> Self {
+        match self {
+            Self::Browse => Self::FullDiff,
+            Self::FullDiff => Self::Wip,
+            Self::Wip => {
                 if max_commits > 0 {
                     Self::CommitDiff(1)
                 } else {
-                    Self::FullDiff
+                    Self::Wip
                 }
             }
             Self::CommitDiff(n) if n < max_commits && n < 16 => Self::CommitDiff(n + 1),
             other => other,
-        }
-    }
-
-    /// Move to previous position (towards newer: ... → -1 → FullDiff → Wip)
-    pub fn prev(self) -> Self {
-        match self {
-            Self::Wip => Self::Wip, // Can't go newer than wip
-            Self::FullDiff => Self::Wip,
-            Self::CommitDiff(1) => Self::FullDiff,
-            Self::CommitDiff(n) => Self::CommitDiff(n - 1),
         }
     }
 }
