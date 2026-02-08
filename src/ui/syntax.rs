@@ -68,7 +68,9 @@ impl Highlighter {
         let is_light = self.theme_mode == ThemeMode::Light;
 
         for line in content.lines() {
-            let ranges = highlighter.highlight_line(line, &self.syntax_set)
+            // Include trailing newline for proper state reset after single-line comments
+            let line_with_newline = format!("{}\n", line);
+            let ranges = highlighter.highlight_line(&line_with_newline, &self.syntax_set)
                 .unwrap_or_default();
 
             let styled_spans: Vec<(String, Style)> = ranges
