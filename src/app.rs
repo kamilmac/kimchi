@@ -884,6 +884,13 @@ impl App {
         // Handle checkout separately (needs refresh after)
         if let ReviewAction::CheckoutPr { pr_number, .. } = &action {
             self.input_modal_state.hide();
+
+            // Block checkout if there are uncommitted changes
+            if self.git.has_uncommitted_changes() {
+                self.toast = Some(Toast::error("Commit or stash changes before switching branches"));
+                return Ok(());
+            }
+
             match self.github.checkout_pr(*pr_number) {
                 Ok(()) => {
                     self.toast = Some(Toast::success("Switched to PR branch"));

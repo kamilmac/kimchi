@@ -356,6 +356,13 @@ impl GitClient {
         &self.path
     }
 
+    /// Check if there are any uncommitted changes (staged or unstaged)
+    pub fn has_uncommitted_changes(&self) -> bool {
+        self.get_uncommitted_paths()
+            .map(|paths| !paths.is_empty())
+            .unwrap_or(false)
+    }
+
     /// Count commits since base branch (for timeline)
     /// Uses first-parent traversal to match GitHub's PR behavior
     pub fn commit_count_since_base(&self) -> Result<usize> {
