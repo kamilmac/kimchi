@@ -530,9 +530,13 @@ impl<'a> StatefulWidget for DiffView<'a> {
         let border_style = self.colors.border_style(self.focused);
 
         // Build title with mode indicator and scroll info
-        let mode_indicator = match state.view_mode {
-            DiffViewMode::Split => "[split]",
-            DiffViewMode::Unified => "[unified]",
+        let mode_indicator = if state.is_file_content_view() {
+            format!("[depth:{}]", state.max_indent_level)
+        } else {
+            match state.view_mode {
+                DiffViewMode::Split => "[split]".to_string(),
+                DiffViewMode::Unified => "[unified]".to_string(),
+            }
         };
         let scroll_info = state.scroll_percent(area.height as usize);
         let title = if scroll_info.is_empty() {
