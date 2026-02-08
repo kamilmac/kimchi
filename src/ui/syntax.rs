@@ -77,7 +77,8 @@ impl Highlighter {
                 .into_iter()
                 .map(|(style, text)| {
                     let ratatui_style = syntect_to_ratatui_style(&style, is_light);
-                    (text.to_string(), ratatui_style)
+                    // Strip trailing newline that was added for parser state
+                    (text.trim_end_matches('\n').to_string(), ratatui_style)
                 })
                 .collect();
 
