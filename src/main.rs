@@ -15,6 +15,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
@@ -34,8 +35,15 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    // Initialize logging (controlled by RUST_LOG env var)
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    // Initialize logging to file (avoids corrupting TUI output on stderr)
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/timecop.log")
+        .expect("Failed to open log file");
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .init();
 
     let args = Args::parse();
 

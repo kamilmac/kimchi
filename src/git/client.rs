@@ -24,6 +24,7 @@ impl GitClient {
             base_branch: None,
         };
         client.base_branch = client.detect_base_branch();
+        client.fetch_base_branch();
         Ok(client)
     }
 
@@ -35,6 +36,37 @@ impl GitClient {
             .unwrap_or("HEAD")
             .to_string();
         Ok(branch)
+    }
+
+    /// Set the base branch explicitly (e.g. from GitHub PR metadata)
+    /// Fetches the remote ref to ensure it's up to date
+    pub fn set_base_branch(&mut self, branch: &str) {
+        let remote_name = format!("origin/{}", branch);
+        if self.repo.find_reference(&format!("refs/remotes/{}", remote_name)).is_ok() {
+            self.base_branch = Some(remote_name);
+        } else {
+            self.base_branch = Some(branch.to_string());
+        }
+        self.fetch_base_branch();
+    }
+
+    /// Re-detect the base branch (e.g. after switching branches)
+    pub fn refresh_base_branch(&mut self) {
+        self.base_branch = self.detect_base_branch();
+        self.fetch_base_branch();
+    }
+
+    /// Fetch the base branch from origin so diffs match GitHub's view
+    pub fn fetch_base_branch(&self) {
+        let base = match &self.base_branch {
+            Some(b) if b.starts_with("origin/") => b.strip_prefix("origin/").unwrap(),
+            _ => return,
+        };
+        let mut remote = match self.repo.find_remote("origin") {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        let _ = remote.fetch(&[base], None, None);
     }
 
     /// Detect the base branch (main, master, etc.)

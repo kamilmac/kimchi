@@ -12,6 +12,7 @@ pub struct PrInfo {
     pub author: String,
     pub state: String,
     pub url: String,
+    pub base_branch: String,
     pub reviews: Vec<Review>,
     pub comments: Vec<Comment>,
     pub file_comments: HashMap<String, Vec<Comment>>,
@@ -162,6 +163,7 @@ pub struct PrSummary {
     pub title: String,
     pub author: String,
     pub branch: String,
+    pub base_branch: String,
     pub updated_at: String,
     pub review_requested: bool, // true if current user is requested reviewer
 }
@@ -179,7 +181,7 @@ impl GitHubClient {
                 "view",
                 &pr_number.to_string(),
                 "--json",
-                "number,title,body,author,state,url",
+                "number,title,body,author,state,url,baseRefName",
             ])
             .output()
             .context("Failed to run gh pr view")?;
@@ -196,6 +198,8 @@ impl GitHubClient {
             author: Author,
             state: String,
             url: String,
+            #[serde(rename = "baseRefName", default)]
+            base_ref_name: String,
         }
 
         #[derive(Deserialize)]
@@ -213,6 +217,7 @@ impl GitHubClient {
             author: basic.author.login,
             state: basic.state,
             url: basic.url,
+            base_branch: basic.base_ref_name,
             ..Default::default()
         };
 
@@ -257,7 +262,7 @@ impl GitHubClient {
             .args([
                 "pr", "list",
                 "--state", "open",
-                "--json", "number,title,author,headRefName,updatedAt,reviewRequests",
+                "--json", "number,title,author,headRefName,baseRefName,updatedAt,reviewRequests",
                 "--limit", "50",
             ])
             .output()
@@ -276,6 +281,8 @@ impl GitHubClient {
             author: Author,
             #[serde(rename = "headRefName")]
             head_ref_name: String,
+            #[serde(rename = "baseRefName", default)]
+            base_ref_name: String,
             #[serde(rename = "updatedAt")]
             updated_at: String,
             #[serde(rename = "reviewRequests", default)]
@@ -307,19 +314,33 @@ impl GitHubClient {
                 title: p.title,
                 author: p.author.login,
                 branch: p.head_ref_name,
+                base_branch: p.base_ref_name,
                 updated_at: p.updated_at.split('T').next().unwrap_or("").to_string(),
                 review_requested,
             }
         }).collect())
     }
 
-    /// Checkout a PR branch
-    pub fn checkout_pr(&self, pr_number: u64) -> Result<()> {
-        Command::new("gh")
+    /// Checkout a PR branch, returns the PR's base branch name
+    pub fn checkout_pr(&self, pr_number: u64) -> Result<String> {
+        let output = Command::new("gh")
             .args(["pr", "checkout", &pr_number.to_string()])
             .output()
             .context("Failed to checkout PR")?;
-        Ok(())
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to checkout PR: {}", stderr);
+        }
+
+        // Get the PR's base branch from GitHub
+        let base_output = Command::new("gh")
+            .args(["pr", "view", &pr_number.to_string(), "--json", "baseRefName", "-q", ".baseRefName"])
+            .output()
+            .context("Failed to get PR base branch")?;
+
+        let base_branch = String::from_utf8_lossy(&base_output.stdout).trim().to_string();
+        Ok(base_branch)
     }
 
     /// Open PR in browser
