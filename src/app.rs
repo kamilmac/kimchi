@@ -536,6 +536,11 @@ impl App {
             return Ok(());
         }
 
+        if KeyInput::is_open_preview(&key) {
+            self.open_preview();
+            return Ok(());
+        }
+
         // Window-specific keys - delegate to widget, dispatch action
         let action = match self.focused {
             FocusedWindow::FileList => self.file_list_state.handle_key(&key),
@@ -858,6 +863,36 @@ impl App {
             path: full_path.to_string_lossy().to_string(),
             line,
         };
+    }
+
+    fn open_preview(&self) {
+        let entry = match self.file_list_state.selected() {
+            Some(e) if !e.is_dir => e,
+            _ => return,
+        };
+
+        let path = &entry.path;
+        if path.ends_with(".md") || path.ends_with(".markdown") {
+            self.open_markdown_preview(path);
+        }
+    }
+
+    fn open_markdown_preview(&self, path: &str) {
+        let full_path = self.git.path().join(path);
+        let content = match std::fs::read_to_string(&full_path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let compressed = lz_str::compress_to_encoded_uri_component(&content);
+        let url = format!("https://kamilmac.github.io/mdash/#{}", compressed);
+
+        let _ = std::process::Command::new("open")
+            .arg(&url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 
     /// Take pending command (clears it)

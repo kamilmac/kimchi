@@ -264,6 +264,10 @@ impl KeyInput {
         key.code == KeyCode::Char('o') && key.modifiers == KeyModifiers::NONE
     }
 
+    pub fn is_open_preview(key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('O') && key.modifiers == KeyModifiers::SHIFT
+    }
+
     pub fn is_refresh(key: &KeyEvent) -> bool {
         key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::NONE
     }
