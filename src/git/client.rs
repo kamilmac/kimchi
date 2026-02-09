@@ -306,10 +306,8 @@ impl GitClient {
                     None => return Ok(DiffStats::default()),
                 };
                 let merge_base = self.merge_base_commit(base)?;
-                let head_commit = self.repo.head()?.peel_to_commit()?;
                 let base_tree = merge_base.tree()?;
-                let head_tree = head_commit.tree()?;
-                self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)?
+                self.repo.diff_tree_to_workdir_with_index(Some(&base_tree), None)?
             }
             TimelinePosition::Wip => {
                 let head_tree = self.repo.head()?.peel_to_tree()?;
@@ -444,17 +442,10 @@ impl GitClient {
         match position {
             TimelinePosition::Browse => unreachable!(), // Handled above
             TimelinePosition::FullDiff => {
-                // Base to HEAD (all committed changes)
-                let head_tree = self.repo.head()?.peel_to_tree()?;
-                let diff = self.repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
+                // Base to working tree (all changes: committed + uncommitted)
+                let diff = self.repo.diff_tree_to_workdir_with_index(Some(&base_tree), Some(&mut opts))?;
                 let result = self.diff_to_string(&diff)?;
                 if result.is_empty() {
-                    // No committed changes - fall through to show uncommitted changes
-                    let wip_diff = self.repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut opts))?;
-                    let wip_result = self.diff_to_string(&wip_diff)?;
-                    if !wip_result.is_empty() {
-                        return Ok(wip_result);
-                    }
                     return self.format_new_file(path);
                 }
                 Ok(result)
