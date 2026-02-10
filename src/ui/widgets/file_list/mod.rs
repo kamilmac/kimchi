@@ -656,6 +656,20 @@ fn render_entry(entry: &TreeEntry, selected: bool, colors: &Colors) -> Line<'sta
     let cursor = if selected { ">" } else { " " };
     spans.push(Span::raw(cursor.to_string()));
 
+    // Status indicator in fixed left column (1 char: A/M/D/R for files, blank for dirs)
+    if !entry.is_dir && entry.status != FileStatus::Unchanged {
+        let status_style = match entry.status {
+            FileStatus::Modified => colors.style_modified(),
+            FileStatus::Added => colors.style_added(),
+            FileStatus::Deleted => colors.style_removed(),
+            FileStatus::Renamed => Style::reset().fg(colors.renamed),
+            FileStatus::Unchanged => colors.style_muted(),
+        };
+        spans.push(Span::styled(entry.status.to_string(), status_style));
+    } else {
+        spans.push(Span::raw(" ".to_string()));
+    }
+
     // Indent (1 space per level)
     let indent = " ".repeat(entry.depth);
     spans.push(Span::raw(indent));
@@ -680,26 +694,11 @@ fn render_entry(entry: &TreeEntry, selected: bool, colors: &Colors) -> Line<'sta
     };
     spans.push(Span::styled(entry.display.clone(), name_style));
 
-    // Status
-    if !entry.is_dir && entry.status != FileStatus::Unchanged {
-        let status_style = match entry.status {
-            FileStatus::Modified => colors.style_modified(),
-            FileStatus::Added => colors.style_added(),
-            FileStatus::Deleted => colors.style_removed(),
-            FileStatus::Renamed => Style::reset().fg(colors.renamed),
-            FileStatus::Unchanged => colors.style_muted(),
-        };
-        spans.push(Span::raw(" ".to_string()));
-        spans.push(Span::styled(entry.status.to_string(), status_style));
-    }
-
-    // Uncommitted indicator
+    // Trailing indicators (after filename — may get clipped on narrow panels)
     if entry.uncommitted {
         spans.push(Span::raw(" ".to_string()));
         spans.push(Span::styled("●".to_string(), colors.style_modified()));
     }
-
-    // Comment indicator
     if entry.has_comments {
         spans.push(Span::raw(" ".to_string()));
         spans.push(Span::styled("C".to_string(), colors.style_header()));
