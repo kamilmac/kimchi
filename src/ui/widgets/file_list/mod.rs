@@ -144,6 +144,11 @@ impl FileListState {
         // Collect all directory paths
         let mut all_dirs = HashSet::new();
         for file in &self.files {
+            // IgnoredDir entries are directories themselves
+            if file.entry_type.is_dir() {
+                all_dirs.insert(file.path.clone());
+                continue;
+            }
             let path = std::path::Path::new(&file.path);
             let mut current = std::path::PathBuf::new();
             for component in path.components() {
