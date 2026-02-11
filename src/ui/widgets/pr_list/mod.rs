@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::config::Colors;
 use crate::event::KeyInput;
-use crate::github::PrSummary;
+use crate::github::{CheckStatus, PrSummary};
 
 use super::{Action, ReviewAction, ScrollState};
 
@@ -291,9 +291,12 @@ fn render_pr_line(
     // Days ago (fixed width, right side)
     let days_ago = format!("{:>7}", days_ago_from_date(&pr.updated_at));
 
+    // Check dots width (1 char per check)
+    let checks_width = pr.checks.len();
+
     // Title (fills remaining space)
-    // Calculate: indicators(4) + #number(7) + sep(2) + author(12) + sep(2) + days(7) + sep(2) = 36
-    let fixed_width = 4 + 7 + 2 + 12 + 2 + 7 + 2;
+    // indicators(4) + #number(7) + sep(2) + author(12) + sep(2) + checks + sep(2) + days(7) = 36 + checks
+    let fixed_width = 4 + 7 + 2 + 12 + 2 + checks_width + 2 + 7;
     let title_width = width.saturating_sub(fixed_width);
     let title = truncate(&pr.title, title_width);
     let title_padded = format!("{:<width$}", title, width = title_width);
@@ -306,6 +309,16 @@ fn render_pr_line(
         ratatui::style::Style::reset().fg(colors.text)
     };
     spans.push(Span::styled(title_padded, title_style));
+
+    // Check status dots (individual, right-aligned before date)
+    for check in &pr.checks {
+        let style = match check {
+            CheckStatus::Success => ratatui::style::Style::reset().fg(ratatui::style::Color::Green),
+            CheckStatus::Failure => ratatui::style::Style::reset().fg(ratatui::style::Color::Red),
+            CheckStatus::Pending => ratatui::style::Style::reset().fg(ratatui::style::Color::Yellow),
+        };
+        spans.push(Span::styled("•", style));
+    }
 
     // Separator before date
     spans.push(Span::styled("│ ", sep_style));
