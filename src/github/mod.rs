@@ -156,6 +156,14 @@ impl GitHubClient {
     }
 }
 
+/// Status of a single CI check
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckStatus {
+    Pending,
+    Success,
+    Failure,
+}
+
 /// Summary of a PR for listing
 #[derive(Debug, Clone)]
 pub struct PrSummary {
@@ -166,6 +174,7 @@ pub struct PrSummary {
     pub base_branch: String,
     pub updated_at: String,
     pub review_requested: bool, // true if current user is requested reviewer
+    pub checks: Vec<CheckStatus>,
 }
 
 impl GitHubClient {
@@ -262,7 +271,7 @@ impl GitHubClient {
             .args([
                 "pr", "list",
                 "--state", "open",
-                "--json", "number,title,author,headRefName,baseRefName,updatedAt,reviewRequests",
+                "--json", "number,title,author,headRefName,baseRefName,updatedAt,reviewRequests,statusCheckRollup",
                 "--limit", "50",
             ])
             .output()
@@ -287,6 +296,8 @@ impl GitHubClient {
             updated_at: String,
             #[serde(rename = "reviewRequests", default)]
             review_requests: Vec<ReviewRequest>,
+            #[serde(rename = "statusCheckRollup", default)]
+            status_check_rollup: Vec<CheckRunData>,
         }
 
         #[derive(Deserialize)]
@@ -299,6 +310,15 @@ impl GitHubClient {
             login: Option<String>,
         }
 
+        // CheckRun has `conclusion`, StatusContext has `state`
+        #[derive(Deserialize)]
+        struct CheckRunData {
+            #[serde(default)]
+            conclusion: String,
+            #[serde(default)]
+            state: String,
+        }
+
         let prs: Vec<PrData> = serde_json::from_slice(&output.stdout)
             .unwrap_or_default();
 
@@ -309,6 +329,21 @@ impl GitHubClient {
                 })
             }).unwrap_or(false);
 
+            let checks: Vec<CheckStatus> = p.status_check_rollup.iter().map(|c| {
+                // Use conclusion (CheckRun) or fall back to state (StatusContext)
+                let status = if c.conclusion.is_empty() { &c.state } else { &c.conclusion };
+                let status = status.to_uppercase();
+                if status == "FAILURE" || status == "TIMED_OUT"
+                    || status == "CANCELLED" || status == "ERROR" {
+                    CheckStatus::Failure
+                } else if status == "SUCCESS" || status == "NEUTRAL"
+                    || status == "SKIPPED" {
+                    CheckStatus::Success
+                } else {
+                    CheckStatus::Pending
+                }
+            }).collect();
+
             PrSummary {
                 number: p.number,
                 title: p.title,
@@ -317,6 +352,7 @@ impl GitHubClient {
                 base_branch: p.base_ref_name,
                 updated_at: p.updated_at.split('T').next().unwrap_or("").to_string(),
                 review_requested,
+                checks,
             }
         }).collect())
     }
